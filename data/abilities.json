@@ -1,0 +1,17 @@
+{
+  "Merge":{"description":"Select another compatible base Pillar and merge the two into one hybrid Pillar."},
+  "Scorch":{"description":"When played, deal {strength} damage to the opponent."},
+  "Fury":{"description":"After this creature attacks the opponent, it permanently gains +{strength} ATK."},
+  "Burn":{"description":"When this creature attacks the opponent, deal {strength} additional damage."},
+  "Strike":{"description":"This turn, attack a random opposing creature if one is present; otherwise attack the opponent."},
+  "Last Spark":{"description":"When this creature is destroyed, deal {strength} damage to the opponent."},
+  "Freeze":{"description":"Freeze an opposing card for its next combat."},
+  "Heal":{"description":"Restore {strength} player HP."},
+  "Growth":{"description":"At the start of your turn, gain {strength} ATK."},
+  "Scald":{"description":"When this card attacks, deal {strength} additional damage to its target."},
+  "Regeneration":{"description":"At turn start, restore player and card HP."},
+  "Flame Strike":{"description":"When attacking a card, deal {strength} additional damage."},
+  "Fireball":{"description":"Deal {strength} damage to the opponent."},
+  "Healing Rain":{"description":"Restore {strength} player HP."},
+  "Regrowth":{"description":"Restore {strength} HP to a friendly card."}
+}

@@ -1,0 +1,9 @@
+res://data/cards_fire_v01.value.translation
+res://data/cards_fire_v01.tempo.translation
+res://data/abilities.json
+res://data/cards.json
+res://scripts/fusion_engine.gd
+res://scripts/main.gd
+res://scripts/profile_store.gd
+res://scripts/card_database.gd
+res://README.md

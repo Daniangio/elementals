@@ -1,0 +1,26 @@
+{
+  "collection": {
+    "pillar_fire": 10, "pillar_water": 10, "pillar_nature": 10,
+    "pillar_steam": 0, "pillar_wildfire": 0, "pillar_swamp": 0,
+    "ember_spark": 10, "ember_pup": 10, "ash_wisp": 10, "flame_initiate": 10,
+    "cinder_hound": 10, "scorchling": 10, "fury_brute": 10, "fire_charger": 10,
+    "pyroclast": 10, "blazehorn": 10, "inferno_beast": 10, "magma_reaver": 10,
+    "hellforged_ram": 10, "ash_phoenix": 10, "inferno_tyrant": 10, "fireball": 10,
+    "water_sprite": 10, "water_mage": 10, "healing_rain": 10,
+    "vineling": 10, "ancient_tree": 10, "regrowth": 10
+  },
+  "merged_cards": {},
+  "decks": {
+    "starter": {
+      "id": "starter", "name": "First Fusion",
+      "foundation_id": "pillar_fire", "vanguard_id": "ember_pup",
+      "card_ids": [
+        "pillar_fire", "pillar_fire", "pillar_fire", "pillar_fire", "pillar_fire", "pillar_fire",
+        "pillar_water", "pillar_water", "pillar_water", "pillar_water", "pillar_water", "pillar_water",
+        "pillar_nature", "pillar_nature", "pillar_nature", "pillar_nature", "pillar_nature", "pillar_nature",
+        "ember_pup", "ember_pup", "cinder_hound", "cinder_hound", "water_sprite", "water_sprite",
+        "water_mage", "water_mage", "vineling", "vineling", "fireball", "healing_rain"
+      ]
+    }
+  }
+}

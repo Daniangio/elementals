@@ -10,6 +10,8 @@ The prototype includes four working areas:
 
 - Collection shows every owned base and merged card with its copy count.
 - Fusion consumes two owned source cards and creates one persistent merged card.
+- Decks contain 30–120 main-deck cards plus a public Foundation Pillar and Vanguard card.
+- The Forge offers Confluence and Imprint merge expressions with name-linked artwork.
 - Deckbuilder creates and saves a 30-card deck while enforcing ownership and copy rules.
 - Match runs the board, Pillars, mana, abilities, animated combat, and bot turns.
 

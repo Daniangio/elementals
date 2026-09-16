@@ -1,0 +1,33 @@
+{
+  "starting_profile": {"level": 1, "xp": 0, "currency": 1000},
+  "match_rewards": {"win_xp": 100, "win_currency": 50, "loss_xp": 20},
+  "packs": {
+    "elemental_core": {
+      "name": "Elemental Core Pack",
+      "description": "Eight cards drawn from the current base set.",
+      "price": 100,
+      "size": 8,
+      "image": "res://assets/pillars/steam.png",
+      "pool": ["ember_spark", "ember_pup", "ash_wisp", "flame_initiate", "cinder_hound", "scorchling", "fury_brute", "fire_charger", "pyroclast", "blazehorn", "inferno_beast", "magma_reaver", "hellforged_ram", "ash_phoenix", "inferno_tyrant", "fireball", "water_sprite", "water_mage", "healing_rain", "vineling", "ancient_tree", "regrowth"]
+    }
+  },
+  "backgrounds": {
+    "Lobby": "res://assets/pillars/steam.png",
+    "Collection": "res://assets/cards/fire/ash_phoenix.png",
+    "Forge": "res://assets/cards/fire/magma_reaver.png",
+    "Match": "res://assets/pillars/wildfire.png",
+    "Profile": "res://assets/pillars/water.png",
+    "Bazaar": "res://assets/pillars/fire.png",
+    "Deck": "res://assets/pillars/nature.png"
+  },
+  "rooms": [
+    {"id":"Profile", "description":"Account, level, XP, currency, and profile switching.", "enabled":true},
+    {"id":"Collection", "description":"Cards, merged creations, and unopened packs.", "enabled":true},
+    {"id":"Deck", "description":"Build decks and choose Foundation and Vanguard.", "enabled":true},
+    {"id":"Forge", "description":"Create Confluence and Imprint cards.", "enabled":true},
+    {"id":"Bazaar", "description":"Purchase card packs with earned currency.", "enabled":true},
+    {"id":"Match", "description":"Play an offline duel against the local opponent.", "enabled":true},
+    {"id":"Quests", "description":"Future challenges and progression objectives.", "enabled":false},
+    {"id":"Arena", "description":"Future competitive game modes.", "enabled":false}
+  ]
+}
