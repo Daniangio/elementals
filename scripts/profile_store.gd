@@ -34,21 +34,24 @@ func _ensure_profile(target: Dictionary, bootstrap: Dictionary) -> void:
 	target.get_or_add("xp", int(defaults.get("xp", 0)))
 	target.get_or_add("currency", int(defaults.get("currency", 1000)))
 	target.get_or_add("inventory", {"packs":{}})
-	profile.get_or_add("collection", {})
-	profile.get_or_add("merged_cards", {})
-	profile.get_or_add("decks", {})
+	target.get_or_add("collection", {})
+	target.get_or_add("merged_cards", {})
+	target.get_or_add("decks", {})
 	for id in bootstrap.get("collection", {}):
-		if not profile.collection.has(id):
-			profile.collection[id] = bootstrap.collection[id]
-	for id in profile.merged_cards:
-		if not profile.collection.has(id):
-			profile.collection[id] = 1
+		if not target.collection.has(id):
+			target.collection[id] = bootstrap.collection[id]
+	for id in target.merged_cards:
+		if not target.collection.has(id):
+			target.collection[id] = 1
 	_migrate_card_ids()
-	if profile.decks.is_empty():
-		profile.decks = bootstrap.decks.duplicate(true)
-	for deck in profile.decks.values():
+	if target.decks.is_empty():
+		target.decks = bootstrap.decks.duplicate(true)
+	for deck in target.decks.values():
 		deck.get_or_add("foundation_id", "pillar_fire")
 		deck.get_or_add("vanguard_id", "ember_pup")
+	target.get_or_add("active_deck_id", "starter")
+	if not target.decks.has(str(target.active_deck_id)):
+		target.active_deck_id = str(target.decks.keys()[0])
 
 func all_profiles() -> Dictionary:
 	return accounts.get("profiles", {})

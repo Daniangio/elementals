@@ -14,12 +14,15 @@ var database := CardDatabase.new()
 var fusion_engine := FusionEngine.new()
 var store := ProfileStore.new()
 var profile: Dictionary
+var game_config: Dictionary = {}
 var content: MarginContainer
 var toast: Label
 var brand_logo: TextureRect
 var brand_label: Label
 var nav_buttons: Array[Button] = []
 var surrender_button: Button
+var room_background: TextureRect
+var current_screen := "Lobby"
 
 var fusion_sources: Array[String] = []
 var fusion_candidates: Array[Dictionary] = []
@@ -36,6 +39,10 @@ var deck_collection_container: HFlowContainer
 var deck_element_filter := "All"
 var deck_foundation := "pillar_fire"
 var deck_vanguard := "ember_pup"
+var deck_special_target := ""
+var editing_deck_id := ""
+var deck_foundation_box: VBoxContainer
+var deck_vanguard_box: VBoxContainer
 var hover_preview: Control
 
 var match_state: Dictionary = {}
@@ -62,9 +69,11 @@ var bot_slot_nodes: Dictionary = {}
 func _ready() -> void:
 	database.load_all()
 	profile = store.load_profile()
+	game_config = store.config
 	_build_shell()
 	var requested := OS.get_environment("ELEMENTALS_SCREEN")
-	_show_screen(requested if requested in ["Home", "Collection", "Forge", "Fusion", "Deck", "Match"] else "Home")
+	_show_screen(requested if requested in ["Home", "Lobby", "Profile", "Collection", "Forge", "Fusion", "Deck", "DeckEditor", "Bazaar", "Match"] else "Lobby")
+	if str(profile.get("name", "")).strip_edges().is_empty(): call_deferred("_show_first_profile_dialog")
 	_apply_responsive_header()
 
 func _notification(what: int) -> void:
@@ -77,6 +86,13 @@ func _build_shell() -> void:
 	background.color = BG
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
+	room_background = TextureRect.new()
+	room_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	room_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	room_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	room_background.modulate = Color(0.55, 0.60, 0.65, 0.34)
+	room_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(room_background)
 	var root := VBoxContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_theme_constant_override("separation", 0)
@@ -103,7 +119,7 @@ func _build_shell() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(spacer)
-	for screen_name in ["Home", "Collection", "Forge", "Deck", "Match"]:
+	for screen_name in ["Lobby", "Profile", "Collection", "Forge", "Deck", "Bazaar", "Match"]:
 		var button := _button(screen_name, _screen_color(screen_name))
 		button.set_meta("screen_name", screen_name)
 		button.pressed.connect(_show_screen.bind(screen_name))
@@ -137,17 +153,26 @@ func _apply_responsive_header() -> void:
 		button.text = ("Cards" if screen_name == "Collection" else "Fuse" if screen_name == "Fusion" else screen_name) if size.x < 900 else screen_name
 
 func _show_screen(screen_name: String) -> void:
+	if screen_name == "Home": screen_name = "Lobby"
 	if screen_name == "Fusion": screen_name = "Forge"
+	current_screen = screen_name
+	if screen_name != "Match":
+		var attune_overlay := get_node_or_null("AttuneOverlay")
+		if attune_overlay: attune_overlay.queue_free()
+	_apply_room_background(screen_name)
 	_hide_card_hover()
 	for child in content.get_children():
 		child.queue_free()
 	toast.text = ""
 	var screen: Control
 	match screen_name:
-		"Home": screen = _build_home()
+		"Lobby": screen = _build_home()
+		"Profile": screen = _build_profile()
 		"Collection": screen = _build_collection()
 		"Forge": screen = _build_fusion()
-		"Deck": screen = _build_deckbuilder()
+		"Deck": screen = _build_deck_library()
+		"DeckEditor": screen = _build_deckbuilder()
+		"Bazaar": screen = _build_bazaar()
 		"Match": screen = _build_match()
 	for button in nav_buttons: button.visible = screen_name != "Match"
 	surrender_button.visible = screen_name == "Match"
@@ -155,23 +180,244 @@ func _show_screen(screen_name: String) -> void:
 
 func _build_home() -> Control:
 	var root := VBoxContainer.new()
-	root.alignment = BoxContainer.ALIGNMENT_CENTER
-	root.add_theme_constant_override("separation", 14)
-	root.add_child(_section_title("Elemental Fusion", "Choose where to go"))
-	for destination in ["Collection", "Deck", "Forge", "Match"]:
-		var button := _button(destination, _screen_color(destination))
-		button.custom_minimum_size = Vector2(300, 58)
-		button.pressed.connect(_show_screen.bind(destination))
-		root.add_child(button)
+	root.add_theme_constant_override("separation", 18)
+	root.add_child(_section_title("Welcome, %s" % str(profile.get("name", "Adventurer")), "Level %d · %d XP · %d crowns" % [int(profile.get("level", 1)), int(profile.get("xp", 0)), int(profile.get("currency", 0))]))
+	var rooms := GridContainer.new()
+	rooms.columns = 3 if size.x >= 900 else 2
+	rooms.add_theme_constant_override("h_separation", 14)
+	rooms.add_theme_constant_override("v_separation", 14)
+	for definition in game_config.get("rooms", []):
+		var room := VBoxContainer.new()
+		room.custom_minimum_size = Vector2(250, 112)
+		var button := _button(str(definition.id), _screen_color(str(definition.id)))
+		button.custom_minimum_size.y = 52
+		button.disabled = not bool(definition.get("enabled", false))
+		if not button.disabled: button.pressed.connect(_show_screen.bind(str(definition.id)))
+		room.add_child(button)
+		var description := Label.new()
+		description.text = str(definition.description) + ("" if not button.disabled else "  (planned)")
+		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		description.add_theme_color_override("font_color", MUTED)
+		room.add_child(description)
+		rooms.add_child(_panel(room))
+	root.add_child(rooms)
 	return root
+
+func _apply_room_background(screen_name: String) -> void:
+	if not is_instance_valid(room_background): return
+	if screen_name == "DeckEditor": screen_name = "Deck"
+	var path := str(game_config.get("backgrounds", {}).get(screen_name, ""))
+	room_background.texture = load(path) if not path.is_empty() and ResourceLoader.exists(path) else null
+	room_background.visible = room_background.texture != null
+
+func _show_first_profile_dialog() -> void:
+	var shade := ColorRect.new()
+	shade.name = "FirstProfileDialog"
+	shade.color = Color(0.02, 0.04, 0.06, 0.92)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.z_index = 500
+	add_child(shade)
+	var dialog := VBoxContainer.new()
+	dialog.custom_minimum_size = Vector2(380, 190)
+	dialog.position = (size - dialog.custom_minimum_size) * 0.5
+	dialog.add_theme_constant_override("separation", 12)
+	dialog.add_child(_section_title("Create your profile", "Choose the name used by this offline account."))
+	var input := LineEdit.new()
+	input.placeholder_text = "Player name"
+	input.max_length = 24
+	dialog.add_child(input)
+	var create := _button("Begin", GOLD)
+	create.pressed.connect(func():
+		var chosen := input.text.strip_edges()
+		if chosen.is_empty(): return
+		profile.name = chosen
+		store.save_profile()
+		shade.queue_free()
+		_show_screen("Lobby"))
+	dialog.add_child(create)
+	shade.add_child(dialog)
+
+func _build_profile() -> Control:
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 14)
+	root.add_child(_section_title("Profile", "Offline accounts keep independent cards, decks, packs, and progression."))
+	var summary := VBoxContainer.new()
+	summary.add_child(_small_heading(str(profile.get("name", "Adventurer")).to_upper()))
+	var stats := Label.new()
+	stats.text = "Level %d    XP %d    Crowns %d    Cards %d" % [int(profile.get("level", 1)), int(profile.get("xp", 0)), int(profile.get("currency", 0)), _collection_total()]
+	stats.add_theme_font_size_override("font_size", 20)
+	summary.add_child(stats)
+	var summary_panel := _panel(summary)
+	summary_panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	root.add_child(summary_panel)
+	root.add_child(_small_heading("SWITCH PROFILE"))
+	var profiles := HFlowContainer.new()
+	for id in store.all_profiles():
+		var account: Dictionary = store.all_profiles()[id]
+		var button := _button("%s\nLevel %d%s" % [str(account.get("name", "Unnamed")), int(account.get("level", 1)), "  · active" if str(id) == store.active_profile_id else ""], GOLD if str(id) == store.active_profile_id else MUTED)
+		button.custom_minimum_size = Vector2(180, 62)
+		button.disabled = str(id) == store.active_profile_id
+		button.pressed.connect(_switch_profile.bind(str(id)))
+		profiles.add_child(button)
+	var profile_scroll := ScrollContainer.new()
+	profile_scroll.custom_minimum_size.y = 82
+	profile_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	profile_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	profile_scroll.add_child(profiles)
+	root.add_child(profile_scroll)
+	var create_row := HBoxContainer.new()
+	var name_input := LineEdit.new()
+	name_input.placeholder_text = "New profile name"
+	name_input.max_length = 24
+	name_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	create_row.add_child(name_input)
+	var create := _button("Create profile", NATURE)
+	create.pressed.connect(func():
+		if name_input.text.strip_edges().is_empty(): return
+		profile = store.create_profile(name_input.text)
+		match_state.clear()
+		_show_screen("Profile"))
+	create_row.add_child(create)
+	root.add_child(create_row)
+	return root
+
+func _switch_profile(id: String) -> void:
+	profile = store.switch_profile(id)
+	match_state.clear()
+	deck_special_target = ""
+	_show_screen("Profile")
+
+func _collection_total() -> int:
+	var total := 0
+	for amount in profile.get("collection", {}).values(): total += int(amount)
+	return total
+
+func _build_bazaar() -> Control:
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 14)
+	root.add_child(_section_title("Bazaar", "%s has %d crowns" % [str(profile.get("name", "Player")), int(profile.get("currency", 0))]))
+	root.add_child(_small_heading("CARD MARKET"))
+	var card_scroll := ScrollContainer.new()
+	card_scroll.custom_minimum_size.y = 405
+	card_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	card_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var card_offers := HBoxContainer.new()
+	card_offers.add_theme_constant_override("separation", 14)
+	for card_id in game_config.get("single_cards", {}):
+		var definition: Dictionary = game_config.single_cards[card_id]
+		var card := database.get_card(str(card_id), profile.merged_cards)
+		if card.is_empty(): continue
+		var offer := VBoxContainer.new()
+		offer.custom_minimum_size.x = 210
+		offer.add_child(_full_card(card, -1))
+		var owned := Label.new()
+		owned.text = "Owned: %d" % int(profile.get("collection", {}).get(card_id, 0))
+		owned.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		owned.add_theme_color_override("font_color", MUTED)
+		offer.add_child(owned)
+		var buy_card := _button("Buy · %d crowns" % int(definition.get("price", 0)), _element_color(str(card.element_tags[0])))
+		buy_card.disabled = int(profile.get("currency", 0)) < int(definition.get("price", 0))
+		buy_card.pressed.connect(_buy_single_card.bind(str(card_id)))
+		offer.add_child(buy_card)
+		card_offers.add_child(_panel(offer))
+	card_scroll.add_child(card_offers)
+	root.add_child(card_scroll)
+	root.add_child(_small_heading("CARD PACKS"))
+	var offers := HFlowContainer.new()
+	for pack_id in game_config.get("packs", {}):
+		var definition: Dictionary = game_config.packs[pack_id]
+		var offer := VBoxContainer.new()
+		offer.custom_minimum_size.x = 260
+		var art := TextureRect.new()
+		art.texture = load(str(definition.image))
+		art.custom_minimum_size = Vector2(240, 180)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		offer.add_child(art)
+		offer.add_child(_small_heading(str(definition.name)))
+		var description := Label.new()
+		description.text = "%s\nContains %d cards." % [str(definition.description), int(definition.size)]
+		description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		offer.add_child(description)
+		var buy := _button("Buy · %d crowns" % int(definition.price), GOLD)
+		buy.disabled = int(profile.get("currency", 0)) < int(definition.price)
+		buy.pressed.connect(_buy_pack.bind(str(pack_id)))
+		offer.add_child(buy)
+		offers.add_child(_panel(offer))
+	root.add_child(offers)
+	return root
+
+func _buy_single_card(card_id: String) -> void:
+	var definition: Dictionary = game_config.get("single_cards", {}).get(card_id, {})
+	var card := database.get_card(card_id, profile.merged_cards)
+	var price := int(definition.get("price", -1))
+	if definition.is_empty() or card.is_empty() or not bool(card.get("collectible", false)) or price < 0 or int(profile.get("currency", 0)) < price: return
+	profile.currency = int(profile.get("currency", 0)) - price
+	profile.get_or_add("collection", {})
+	profile.collection[card_id] = int(profile.collection.get(card_id, 0)) + 1
+	store.save_profile()
+	_show_screen("Bazaar")
+	_notify("%s added to your collection." % str(card.display_name))
+
+func _buy_pack(pack_id: String) -> void:
+	var definition: Dictionary = game_config.get("packs", {}).get(pack_id, {})
+	var price := int(definition.get("price", 0))
+	if definition.is_empty() or int(profile.get("currency", 0)) < price: return
+	profile.currency = int(profile.get("currency", 0)) - price
+	profile.get_or_add("inventory", {"packs":{}})
+	profile.inventory.get_or_add("packs", {})
+	profile.inventory.packs[pack_id] = int(profile.inventory.packs.get(pack_id, 0)) + 1
+	store.save_profile()
+	_show_screen("Bazaar")
+	_notify("Pack purchased. Open it from Collection.")
+
+func _open_pack(pack_id: String) -> void:
+	var owned_packs := int(profile.get("inventory", {}).get("packs", {}).get(pack_id, 0))
+	var definition: Dictionary = game_config.get("packs", {}).get(pack_id, {})
+	if owned_packs <= 0 or definition.is_empty(): return
+	profile.inventory.packs[pack_id] = owned_packs - 1
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var found: Array[String] = []
+	var pool: Array = definition.get("pool", [])
+	for i in int(definition.get("size", 8)):
+		var id := str(pool[rng.randi_range(0, pool.size() - 1)])
+		found.append(id)
+		profile.collection[id] = int(profile.collection.get(id, 0)) + 1
+	store.save_profile()
+	_show_unpacking_overlay(str(definition.name), found)
+
+func _show_unpacking_overlay(pack_name: String, found: Array[String]) -> void:
+	var shade := ColorRect.new()
+	shade.color = Color(0.01, 0.03, 0.05, 0.94)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.z_index = 400
+	add_child(shade)
+	var box := VBoxContainer.new()
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 34)
+	box.add_theme_constant_override("separation", 14)
+	box.add_child(_section_title("%s opened" % pack_name, "These cards were added to your collection."))
+	var cards := HFlowContainer.new()
+	cards.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	for id in found:
+		cards.add_child(_portrait_button(database.get_card(id, profile.merged_cards), {}, false, int(database.get_card(id, profile.merged_cards).max_hp) > 0, 126))
+	box.add_child(cards)
+	var close := _button("Continue", GOLD)
+	close.pressed.connect(func(): shade.queue_free(); _show_screen("Collection"))
+	box.add_child(close)
+	shade.add_child(box)
 
 func _build_collection() -> Control:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
-	root.add_child(_section_title("Collection", "Owned cards, merged creations, and match-only Pillars"))
+	root.add_child(_section_title("Collection", "Browse cards and stored items on their own full-size pages"))
+	var pages := TabContainer.new()
+	pages.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var cards_page := VBoxContainer.new()
+	cards_page.name = "Cards"
 	var search := LineEdit.new()
 	search.placeholder_text = "Search collection"
-	root.add_child(search)
+	cards_page.add_child(search)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var grid := GridContainer.new()
@@ -182,7 +428,37 @@ func _build_collection() -> Control:
 	_rebuild_collection_grid(grid, "")
 	search.text_changed.connect(func(query): _rebuild_collection_grid(grid, query))
 	scroll.add_child(grid)
-	root.add_child(scroll)
+	cards_page.add_child(scroll)
+	pages.add_child(cards_page)
+	var items_page := VBoxContainer.new()
+	items_page.name = "Items"
+	items_page.add_child(_small_heading("PACKS & ITEMS"))
+	var item_scroll := ScrollContainer.new()
+	item_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var items := HFlowContainer.new()
+	items.add_theme_constant_override("h_separation", 14)
+	items.add_theme_constant_override("v_separation", 14)
+	for pack_id in game_config.get("packs", {}):
+		var amount := int(profile.get("inventory", {}).get("packs", {}).get(pack_id, 0))
+		var definition: Dictionary = game_config.packs[pack_id]
+		var item := VBoxContainer.new()
+		item.custom_minimum_size.x = 260
+		var art := TextureRect.new()
+		art.texture = load(str(definition.image))
+		art.custom_minimum_size = Vector2(240, 180)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		item.add_child(art)
+		item.add_child(_small_heading("%s  ×%d" % [str(definition.name), amount]))
+		var open := _button("Open pack", WATER)
+		open.disabled = amount <= 0
+		open.pressed.connect(_open_pack.bind(str(pack_id)))
+		item.add_child(open)
+		items.add_child(_panel(item))
+	item_scroll.add_child(items)
+	items_page.add_child(item_scroll)
+	pages.add_child(items_page)
+	root.add_child(pages)
 	return root
 
 func _rebuild_collection_grid(grid: GridContainer, query: String) -> void:
@@ -195,64 +471,71 @@ func _build_fusion() -> Control:
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 10)
 	root.add_child(_section_title("Forge", "Choose two cards, then select a name, artwork, and merge expression"))
-	var body: BoxContainer = VBoxContainer.new() if size.x < 900 else HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 10)
-	var collection_box := VBoxContainer.new()
-	collection_box.custom_minimum_size.x = 330
-	collection_box.add_child(_small_heading("OWNED CARDS"))
-	var collection_scroll := ScrollContainer.new()
-	collection_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var collection_grid := GridContainer.new()
-	collection_grid.columns = 2
-	for card in database.all_cards(profile.merged_cards):
-		if store.owned(card.id) > 0 and not card.is_pillar:
-			var item := _owned_full_card(card, true)
-			item.gui_input.connect(_fusion_collection_input.bind(card.id))
-			collection_grid.add_child(item)
-	collection_scroll.add_child(collection_grid)
-	collection_box.add_child(collection_scroll)
-	body.add_child(_panel(collection_box))
-
 	var work := VBoxContainer.new()
-	work.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	work.add_child(_small_heading("SELECTED CARDS"))
+	work.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	work.add_theme_constant_override("separation", 10)
+	var top := HBoxContainer.new()
+	top.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	top.add_theme_constant_override("separation", 10)
+	var confluence_box := VBoxContainer.new()
+	confluence_box.custom_minimum_size.x = 240
+	confluence_box.add_child(_small_heading("CONFLUENCE"))
+	var confluence_scroll := ScrollContainer.new()
+	confluence_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var confluence := HBoxContainer.new()
+	confluence.name = "Confluence"
+	confluence_scroll.add_child(confluence)
+	confluence_box.add_child(confluence_scroll)
+	var confluence_panel := _panel(confluence_box)
+	confluence_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(confluence_panel)
+	var center := VBoxContainer.new()
+	center.custom_minimum_size.x = 390
+	center.add_child(_small_heading("MERGE SLOTS"))
 	var sources := HBoxContainer.new()
 	sources.name = "Sources"
-	work.add_child(sources)
-	work.add_child(_small_heading("NAME & ARTWORK"))
+	sources.alignment = BoxContainer.ALIGNMENT_CENTER
+	center.add_child(sources)
+	center.add_child(_small_heading("NAME & ARTWORK"))
 	var name_picker := OptionButton.new()
 	name_picker.name = "NamePicker"
 	name_picker.item_selected.connect(func(index): fusion_name_index = index; fusion_selected = -1; _rebuild_fusion_work(work))
-	work.add_child(name_picker)
-	work.add_child(_small_heading("POSSIBLE RESULTS"))
+	center.add_child(name_picker)
+	var center_panel := _panel(center)
+	center_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	top.add_child(center_panel)
+	var imprint_box := VBoxContainer.new()
+	imprint_box.add_child(_small_heading("IMPRINT"))
 	var result_scroll := ScrollContainer.new()
 	result_scroll.name = "ResultScroll"
 	result_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	result_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	result_scroll.custom_minimum_size.y = 400
-	var results := VBoxContainer.new()
-	results.name = "Results"
-	var confluence_label := _small_heading("CONFLUENCE — both cards combine completely")
-	confluence_label.name = "ConfluenceLabel"
-	results.add_child(confluence_label)
-	var confluence := HBoxContainer.new()
-	confluence.name = "Confluence"
-	results.add_child(confluence)
-	var imprint_label := _small_heading("IMPRINT — one rules identity shapes the result")
-	imprint_label.name = "ImprintLabel"
-	results.add_child(imprint_label)
+	result_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	result_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var imprint := HBoxContainer.new()
 	imprint.name = "Imprint"
-	results.add_child(imprint)
-	result_scroll.add_child(results)
-	work.add_child(result_scroll)
-	var confirm := _button("Confirm merge", GOLD)
-	confirm.name = "Confirm"
-	confirm.pressed.connect(_confirm_fusion)
-	work.add_child(confirm)
-	body.add_child(_panel(work))
-	root.add_child(body)
+	result_scroll.add_child(imprint)
+	imprint_box.add_child(result_scroll)
+	var imprint_panel := _panel(imprint_box)
+	imprint_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(imprint_panel)
+	work.add_child(top)
+	var collection_box := VBoxContainer.new()
+	collection_box.add_child(_small_heading("COLLECTION — CLICK TO FILL THE MERGE SLOTS"))
+	var collection_scroll := ScrollContainer.new()
+	collection_scroll.name = "ForgeCollectionScroll"
+	collection_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	collection_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	collection_scroll.custom_minimum_size.y = 300
+	var collection_row := HBoxContainer.new()
+	for card in database.all_cards(profile.merged_cards):
+		if store.owned(card.id) > 0 and str(card.card_type) == "Creature":
+			var item := _owned_full_card(card, true)
+			item.gui_input.connect(_fusion_collection_input.bind(card.id))
+			collection_row.add_child(item)
+	collection_scroll.add_child(collection_row)
+	collection_box.add_child(collection_scroll)
+	work.add_child(_panel(collection_box))
+	root.add_child(work)
 	_rebuild_fusion_work(work)
 	return root
 
@@ -264,6 +547,9 @@ func _fusion_collection_input(event: InputEvent, card_id: String) -> void:
 
 func _select_fusion_source(card_id: String) -> void:
 	var selected_card := database.get_card(card_id, profile.merged_cards)
+	if str(selected_card.get("card_type", "")) != "Creature":
+		_notify("Only creatures can enter the Forge.")
+		return
 	if fusion_engine.merge_count(selected_card) >= 2:
 		_notify("%s has already reached its two-merge limit." % selected_card.display_name)
 		return
@@ -285,7 +571,7 @@ func _clear_fusion_source(index: int) -> void:
 		_show_screen("Fusion")
 
 func _rebuild_fusion_work(work: VBoxContainer) -> void:
-	var sources: HBoxContainer = work.get_node("Sources")
+	var sources: HBoxContainer = work.find_child("Sources", true, false)
 	for child in sources.get_children(): child.queue_free()
 	for i in 2:
 		if i < fusion_sources.size():
@@ -301,11 +587,17 @@ func _rebuild_fusion_work(work: VBoxContainer) -> void:
 			empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			empty.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			sources.add_child(empty)
-	var picker: OptionButton = work.get_node("NamePicker")
+		if i == 0:
+			var confirm := _button("Merge", GOLD)
+			confirm.name = "Confirm"
+			confirm.custom_minimum_size.x = 80
+			confirm.visible = fusion_selected >= 0
+			confirm.pressed.connect(_confirm_fusion)
+			sources.add_child(confirm)
+	var picker: OptionButton = work.find_child("NamePicker", true, false)
 	picker.clear()
-	var confluence: HBoxContainer = work.get_node("ResultScroll/Results/Confluence")
-	var imprint: HBoxContainer = work.get_node("ResultScroll/Results/Imprint")
-	var imprint_label: Label = work.get_node("ResultScroll/Results/ImprintLabel")
+	var confluence: HBoxContainer = work.find_child("Confluence", true, false)
+	var imprint: HBoxContainer = work.find_child("Imprint", true, false)
 	for child in confluence.get_children(): child.queue_free()
 	for child in imprint.get_children(): child.queue_free()
 	fusion_candidates.clear()
@@ -324,15 +616,14 @@ func _rebuild_fusion_work(work: VBoxContainer) -> void:
 				_set_mouse_pass(card_panel)
 				card_panel.gui_input.connect(_fusion_candidate_input.bind(i))
 				(confluence if fusion_candidates[i].fusion_mode == "confluence" else imprint).add_child(card_panel)
-			imprint_label.visible = imprint.get_child_count() > 0
 		else:
-			imprint_label.visible = false
 			var note := Label.new()
 			note.text = "These cards cannot merge, or one has reached its two-merge limit."
+			note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			confluence.add_child(note)
-	var confirm: Button = work.get_node("Confirm")
-	if fusion_sources.size() < 2: imprint_label.visible = false
-	confirm.disabled = fusion_selected < 0 or fusion_selected >= fusion_candidates.size()
+	var confirm: Button = work.find_child("Confirm", true, false)
+	if is_instance_valid(confirm):
+		confirm.visible = fusion_selected >= 0 and fusion_selected < fusion_candidates.size()
 
 func _fusion_candidate_input(event: InputEvent, index: int) -> void:
 	if (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) or (event is InputEventScreenTouch and event.pressed):
@@ -349,37 +640,231 @@ func _confirm_fusion() -> void:
 	if store.consume_and_add(source_ids, merged):
 		fusion_sources.clear()
 		fusion_selected = -1
-		_show_screen("Collection")
-		_notify("Created %s. The two source cards were consumed." % merged.display_name)
+		_show_screen("Forge")
+		_show_fusion_result_overlay(a, b, merged)
 	else:
 		_notify("The collection no longer contains both source cards.")
 
+func _show_fusion_result_overlay(a: Dictionary, b: Dictionary, merged: Dictionary) -> void:
+	var shade := ColorRect.new()
+	shade.name = "FusionResultOverlay"
+	shade.color = Color(0.01, 0.02, 0.04, 0.94)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.z_index = 600
+	add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.add_child(center)
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(700, 560)
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 16)
+	box.add_child(_section_title("The Forge awakens", "The resulting card has already been added to your collection."))
+	var source_row := HBoxContainer.new()
+	source_row.name = "AnimatedSources"
+	source_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	source_row.add_theme_constant_override("separation", 100)
+	source_row.add_child(_full_card(a, -1))
+	source_row.add_child(_full_card(b, -1))
+	box.add_child(source_row)
+	var result := _full_card(merged, -1)
+	result.name = "FusionResult"
+	result.visible = false
+	result.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(result)
+	var close := _button("Claim card", GOLD)
+	close.name = "CloseFusionResult"
+	close.visible = false
+	close.pressed.connect(func(): shade.queue_free())
+	box.add_child(close)
+	center.add_child(_panel(box))
+	call_deferred("_animate_fusion_result", shade, source_row, result, close)
+
+func _animate_fusion_result(shade: Control, source_row: Control, result: Control, close: Button) -> void:
+	await get_tree().process_frame
+	for i in 28:
+		var spark := ColorRect.new()
+		spark.color = [FIRE, WATER, NATURE, GOLD][i % 4]
+		spark.size = Vector2(5 + i % 4, 5 + i % 4)
+		spark.position = size * 0.5 + Vector2(randf_range(-240, 240), randf_range(-150, 150))
+		shade.add_child(spark)
+		var spark_tween := create_tween().set_parallel(true)
+		spark_tween.tween_property(spark, "position", size * 0.5 + Vector2(randf_range(-28, 28), randf_range(-28, 28)), 0.75)
+		spark_tween.tween_property(spark, "modulate:a", 0.0, 0.75)
+		spark_tween.chain().tween_callback(spark.queue_free)
+	var tween := create_tween().set_parallel(true)
+	tween.tween_property(source_row, "scale", Vector2(0.15, 0.15), 0.72).set_trans(Tween.TRANS_BACK)
+	tween.tween_property(source_row, "modulate:a", 0.0, 0.72)
+	await tween.finished
+	source_row.visible = false
+	result.visible = true
+	result.scale = Vector2(0.25, 0.25)
+	result.modulate.a = 0.0
+	var reveal := create_tween().set_parallel(true)
+	reveal.tween_property(result, "scale", Vector2.ONE, 0.5).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	reveal.tween_property(result, "modulate:a", 1.0, 0.35)
+	await reveal.finished
+	close.visible = true
+
+func _build_deck_library() -> Control:
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 12)
+	var heading := HBoxContainer.new()
+	var title := _section_title("Decks", "Choose the deck used for matches, or create and manage another one")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	heading.add_child(title)
+	var create := _button("New deck", NATURE)
+	create.pressed.connect(_create_deck)
+	heading.add_child(create)
+	root.add_child(heading)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var decks := HFlowContainer.new()
+	decks.add_theme_constant_override("h_separation", 14)
+	decks.add_theme_constant_override("v_separation", 14)
+	var active_id := str(profile.get("active_deck_id", "starter"))
+	for id in profile.get("decks", {}):
+		var deck: Dictionary = profile.decks[id]
+		var deck_size: int = deck.get("card_ids", []).size()
+		var valid: bool = deck_size >= 30 and deck_size <= 120 and not str(deck.get("foundation_id", "")).is_empty() and not str(deck.get("vanguard_id", "")).is_empty()
+		var card := VBoxContainer.new()
+		card.custom_minimum_size.x = 310
+		var label := _small_heading(("ACTIVE · " if str(id) == active_id else "") + str(deck.get("name", "Untitled Deck")))
+		label.add_theme_color_override("font_color", GOLD if str(id) == active_id else INK)
+		card.add_child(label)
+		var previews := HBoxContainer.new()
+		previews.alignment = BoxContainer.ALIGNMENT_CENTER
+		previews.add_theme_constant_override("separation", 18)
+		previews.add_child(_portrait_button(database.get_card(str(deck.get("foundation_id", "pillar_fire")), profile.merged_cards), {}, false, false, 112))
+		previews.add_child(_portrait_button(database.get_card(str(deck.get("vanguard_id", "ember_pup")), profile.merged_cards), {}, false, true, 112))
+		card.add_child(previews)
+		var count := Label.new()
+		count.text = "%d cards  ·  %s" % [deck_size, "Ready" if valid else "Needs 30–120 cards"]
+		count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		count.add_theme_color_override("font_color", MUTED)
+		card.add_child(count)
+		var actions := HBoxContainer.new()
+		var activate := _button("Active" if str(id) == active_id else "Use", GOLD if str(id) == active_id else NATURE)
+		activate.disabled = str(id) == active_id or not valid
+		activate.pressed.connect(_set_active_deck.bind(str(id)))
+		actions.add_child(activate)
+		var edit := _button("Edit", WATER)
+		edit.pressed.connect(_edit_deck.bind(str(id)))
+		actions.add_child(edit)
+		var clone := _button("Clone", MUTED)
+		clone.pressed.connect(_clone_deck.bind(str(id)))
+		actions.add_child(clone)
+		var remove := _button("Delete", FIRE)
+		remove.disabled = profile.decks.size() <= 1
+		remove.pressed.connect(_request_delete_deck.bind(str(id)))
+		actions.add_child(remove)
+		card.add_child(actions)
+		decks.add_child(_panel(card))
+	scroll.add_child(decks)
+	root.add_child(scroll)
+	return root
+
+func _new_deck_id() -> String:
+	var base := "deck_%d" % Time.get_ticks_usec()
+	while profile.decks.has(base): base += "_copy"
+	return base
+
+func _create_deck() -> void:
+	var id := _new_deck_id()
+	profile.decks[id] = {"id":id, "name":"Untitled Deck", "card_ids":[], "foundation_id":"pillar_fire", "vanguard_id":"ember_pup", "modified_at":Time.get_datetime_string_from_system()}
+	store.save_profile()
+	_edit_deck(id)
+
+func _edit_deck(id: String) -> void:
+	if not profile.get("decks", {}).has(id): return
+	editing_deck_id = id
+	_show_screen("DeckEditor")
+
+func _set_active_deck(id: String) -> void:
+	if not profile.get("decks", {}).has(id): return
+	var count: int = profile.decks[id].get("card_ids", []).size()
+	if count < 30 or count > 120:
+		_notify("Only a valid 30–120 card deck can become active.")
+		return
+	profile.active_deck_id = id
+	store.save_profile()
+	_show_screen("Deck")
+
+func _clone_deck(id: String) -> void:
+	if not profile.get("decks", {}).has(id): return
+	var clone: Dictionary = profile.decks[id].duplicate(true)
+	var clone_id := _new_deck_id()
+	clone.id = clone_id
+	clone.name = str(clone.get("name", "Deck")) + " Copy"
+	clone.modified_at = Time.get_datetime_string_from_system()
+	profile.decks[clone_id] = clone
+	store.save_profile()
+	_show_screen("Deck")
+
+func _request_delete_deck(id: String) -> void:
+	if profile.get("decks", {}).size() <= 1 or not profile.decks.has(id): return
+	var shade := ColorRect.new()
+	shade.color = Color(0.01, 0.02, 0.04, 0.9)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.z_index = 600
+	add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.add_child(center)
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(430, 180)
+	box.add_theme_constant_override("separation", 12)
+	box.add_child(_section_title("Delete %s?" % str(profile.decks[id].get("name", "this deck")), "This removes the deck from this profile and cannot be undone."))
+	var actions := HBoxContainer.new()
+	var cancel := _button("Keep deck", MUTED)
+	cancel.pressed.connect(shade.queue_free)
+	actions.add_child(cancel)
+	var remove := _button("Delete deck", FIRE)
+	remove.pressed.connect(func(): shade.queue_free(); _delete_deck(id))
+	actions.add_child(remove)
+	box.add_child(actions)
+	center.add_child(_panel(box))
+
+func _delete_deck(id: String) -> void:
+	if profile.get("decks", {}).size() <= 1 or not profile.decks.has(id): return
+	profile.decks.erase(id)
+	if str(profile.get("active_deck_id", "")) == id:
+		profile.active_deck_id = str(profile.decks.keys()[0])
+	if editing_deck_id == id: editing_deck_id = ""
+	store.save_profile()
+	_show_screen("Deck")
+
 func _build_deckbuilder() -> Control:
+	deck_special_target = ""
+	if editing_deck_id.is_empty() or not profile.get("decks", {}).has(editing_deck_id):
+		editing_deck_id = str(profile.get("active_deck_id", "starter"))
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 8)
 	var heading := HBoxContainer.new()
-	var title := _section_title("Deckbuilder", "Click a collection card to add it; click a deck card to remove one copy")
+	var back := _button("← Decks", MUTED)
+	back.pressed.connect(_show_screen.bind("Deck"))
+	heading.add_child(back)
+	var title := _section_title("Deckbuilder · %s" % str(profile.decks[editing_deck_id].get("name", "Untitled Deck")), "Click a collection card to add it; click a deck card to remove one copy")
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	heading.add_child(title)
-	var save := _button("Save deck", GOLD)
+	var save := _button("Save & name deck", GOLD)
 	save.pressed.connect(_save_deck)
 	heading.add_child(save)
 	root.add_child(heading)
 	deck_cards.clear()
-	var saved_deck: Dictionary = profile.decks.get("starter", {})
+	var saved_deck: Dictionary = profile.decks.get(editing_deck_id, {})
 	for id in saved_deck.get("card_ids", []): deck_cards.append(str(id))
 	deck_foundation = str(saved_deck.get("foundation_id", "pillar_fire"))
 	deck_vanguard = str(saved_deck.get("vanguard_id", "ember_pup"))
-	var starts := HBoxContainer.new()
-	starts.add_theme_constant_override("separation", 14)
-	starts.add_child(_deck_special_picker("FOUNDATION", "Your starting base Pillar", true))
-	starts.add_child(_deck_special_picker("VANGUARD", "Your other always-available starting card", false))
-	root.add_child(_panel(starts))
+	var deck_panel_row := HBoxContainer.new()
+	deck_panel_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	deck_panel_row.add_theme_constant_override("separation", 14)
 	var deck_box := VBoxContainer.new()
+	deck_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	deck_count_label = _small_heading("")
 	deck_box.add_child(deck_count_label)
 	var deck_scroll := ScrollContainer.new()
-	deck_scroll.custom_minimum_size.y = 250
+	deck_scroll.custom_minimum_size.y = 230
 	deck_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	deck_cards_container = HFlowContainer.new()
 	deck_cards_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -387,7 +872,20 @@ func _build_deckbuilder() -> Control:
 	deck_cards_container.add_theme_constant_override("v_separation", 8)
 	deck_scroll.add_child(deck_cards_container)
 	deck_box.add_child(deck_scroll)
-	root.add_child(_panel(deck_box))
+	deck_panel_row.add_child(deck_box)
+	var starts := VBoxContainer.new()
+	starts.custom_minimum_size.x = 230
+	starts.add_theme_constant_override("separation", 8)
+	deck_foundation_box = VBoxContainer.new()
+	deck_vanguard_box = VBoxContainer.new()
+	_render_deck_special_box(deck_foundation_box, "foundation")
+	_render_deck_special_box(deck_vanguard_box, "vanguard")
+	starts.add_child(deck_foundation_box)
+	starts.add_child(deck_vanguard_box)
+	deck_panel_row.add_child(starts)
+	var deck_panel := _panel(deck_panel_row)
+	deck_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(deck_panel)
 
 	var collection_section := HBoxContainer.new()
 	collection_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -434,10 +932,22 @@ func _set_deck_filter(element: String) -> void:
 	_refresh_deck_cards()
 
 func _add_card_to_deck(id: String) -> void:
+	var card := database.get_card(id, profile.merged_cards)
+	if not deck_special_target.is_empty():
+		if not _valid_special_choice(card, deck_special_target):
+			_notify("Choose %s." % ("a base Pillar" if deck_special_target == "foundation" else "a non-Pillar card"))
+			return
+		if deck_special_target == "foundation": deck_foundation = id
+		else: deck_vanguard = id
+		deck_special_target = ""
+		_render_deck_special_box(deck_foundation_box, "foundation")
+		_render_deck_special_box(deck_vanguard_box, "vanguard")
+		_refresh_deck_cards()
+		_notify("Starting card updated. Save the deck to keep it.")
+		return
 	if deck_cards.size() >= 120:
 		_notify("The deck already contains the maximum 120 cards.")
 		return
-	var card := database.get_card(id, profile.merged_cards)
 	if not card.is_pillar and _deck_name_count(str(card.display_name)) >= 3:
 		_notify("A deck can contain at most three cards named %s." % card.display_name)
 		return
@@ -473,7 +983,7 @@ func _refresh_deck_cards() -> void:
 	for card in database.all_cards(profile.merged_cards):
 		if not bool(card.get("deck_eligible", true)) or store.owned(card.id) <= 0: continue
 		if deck_element_filter != "All" and deck_element_filter not in card.get("element_tags", []): continue
-		deck_collection_container.add_child(_deck_portrait_entry(card, store.owned(card.id), true))
+		deck_collection_container.add_child(_deck_portrait_entry(card, store.owned(card.id), true, not deck_special_target.is_empty() and _valid_special_choice(card, deck_special_target)))
 	deck_count_label.text = "CURRENT DECK  %d  (30 minimum · 120 maximum)" % deck_cards.size()
 	deck_count_label.add_theme_color_override("font_color", NATURE if deck_cards.size() >= 30 and deck_cards.size() <= 120 else GOLD)
 
@@ -482,10 +992,10 @@ func _card_counts(ids: Array[String]) -> Dictionary:
 	for id in ids: result[id] = int(result.get(id, 0)) + 1
 	return result
 
-func _deck_portrait_entry(card: Dictionary, copies: int, from_collection: bool) -> Control:
+func _deck_portrait_entry(card: Dictionary, copies: int, from_collection: bool, highlighted := false) -> Control:
 	var row := VBoxContainer.new()
 	row.add_theme_constant_override("separation", 3)
-	var portrait := _portrait_button(card, {}, false, int(card.max_hp) > 0)
+	var portrait := _portrait_button(card, {}, highlighted, int(card.max_hp) > 0)
 	if from_collection:
 		portrait.pressed.connect(_add_card_to_deck.bind(str(card.id)))
 	else:
@@ -515,46 +1025,82 @@ func _save_deck() -> void:
 		if int(names[card_name]) > 3:
 			_notify("A deck can contain at most three cards named %s." % card_name)
 			return
-	profile.decks.starter = {"id":"starter", "name":"First Fusion", "card_ids":deck_cards.duplicate(), "foundation_id":deck_foundation, "vanguard_id":deck_vanguard, "modified_at":Time.get_datetime_string_from_system()}
-	store.save_profile()
-	_notify("Deck saved.")
+	_show_deck_name_dialog(str(profile.decks.get(editing_deck_id, {}).get("name", "Untitled Deck")))
 
-func _deck_special_picker(title: String, subtitle: String, foundation: bool) -> Control:
+func _show_deck_name_dialog(current_name: String) -> void:
+	var shade := ColorRect.new()
+	shade.name = "DeckNameDialog"
+	shade.color = Color(0.01, 0.02, 0.04, 0.9)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.z_index = 600
+	add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.add_child(center)
 	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(420, 190)
+	box.add_theme_constant_override("separation", 12)
+	box.add_child(_section_title("Name this deck", "The name appears in your Deck Library."))
+	var input := LineEdit.new()
+	input.name = "DeckNameInput"
+	input.text = current_name
+	input.max_length = 40
+	input.select_all()
+	box.add_child(input)
+	var actions := HBoxContainer.new()
+	var cancel := _button("Cancel", MUTED)
+	cancel.pressed.connect(shade.queue_free)
+	actions.add_child(cancel)
+	var commit := _button("Save deck", GOLD)
+	commit.pressed.connect(func():
+		var chosen := input.text.strip_edges()
+		if chosen.is_empty(): return
+		shade.queue_free()
+		_commit_deck_save(chosen))
+	actions.add_child(commit)
+	box.add_child(actions)
+	center.add_child(_panel(box))
+	input.grab_focus()
+
+func _commit_deck_save(deck_name: String) -> void:
+	if editing_deck_id.is_empty(): editing_deck_id = _new_deck_id()
+	profile.decks[editing_deck_id] = {"id":editing_deck_id, "name":deck_name, "card_ids":deck_cards.duplicate(), "foundation_id":deck_foundation, "vanguard_id":deck_vanguard, "modified_at":Time.get_datetime_string_from_system()}
+	if str(profile.get("active_deck_id", "")).is_empty(): profile.active_deck_id = editing_deck_id
+	store.save_profile()
+	_show_screen("Deck")
+	_notify("%s saved." % deck_name)
+
+func _render_deck_special_box(box: VBoxContainer, zone: String) -> void:
+	for child in box.get_children():
+		box.remove_child(child)
+		child.queue_free()
+	var foundation := zone == "foundation"
+	var title := "FOUNDATION" if foundation else "VANGUARD"
+	var subtitle := "Your starting base Pillar" if foundation else "Your other always-available starting card"
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_child(_small_heading(title))
 	var note := Label.new()
 	note.text = subtitle
 	note.add_theme_color_override("font_color", MUTED)
 	box.add_child(note)
-	var picker := OptionButton.new()
-	var ids: Array[String] = []
-	for card in database.all_cards(profile.merged_cards):
-		if store.owned(card.id) <= 0: continue
-		if foundation and (not card.is_pillar or not card.is_base): continue
-		if not foundation and card.is_pillar: continue
-		picker.add_item(str(card.display_name))
-		ids.append(str(card.id))
 	var selected_id := deck_foundation if foundation else deck_vanguard
-	var selected_index := ids.find(selected_id)
-	if selected_index >= 0: picker.select(selected_index)
-	picker.item_selected.connect(func(index: int):
-		if foundation: deck_foundation = ids[index]
-		else: deck_vanguard = ids[index]
-		_refresh_deck_special_preview(box, ids[index], foundation))
-	box.add_child(picker)
 	if not selected_id.is_empty():
 		var preview := _portrait_button(database.get_card(selected_id, profile.merged_cards), {}, false, not foundation, 82)
 		preview.name = "Preview"
+		preview.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		box.add_child(preview)
-	return box
+	var update := _button("Select from collection" if deck_special_target != zone else "Selecting… click a highlighted card", GOLD if deck_special_target == zone else MUTED)
+	update.pressed.connect(_begin_special_selection.bind(zone))
+	box.add_child(update)
 
-func _refresh_deck_special_preview(box: VBoxContainer, id: String, foundation: bool) -> void:
-	var old := box.get_node_or_null("Preview")
-	if old: old.queue_free()
-	var preview := _portrait_button(database.get_card(id, profile.merged_cards), {}, false, not foundation, 82)
-	preview.name = "Preview"
-	box.add_child(preview)
+func _begin_special_selection(zone: String) -> void:
+	deck_special_target = "" if deck_special_target == zone else zone
+	_render_deck_special_box(deck_foundation_box, "foundation")
+	_render_deck_special_box(deck_vanguard_box, "vanguard")
+	_refresh_deck_cards()
+
+func _valid_special_choice(card: Dictionary, zone: String) -> bool:
+	return bool(card.is_pillar) and bool(card.is_base) if zone == "foundation" else not bool(card.is_pillar)
 
 func _build_match() -> Control:
 	if match_state.is_empty() or bool(match_state.get("finished", false)):
@@ -591,6 +1137,7 @@ func _build_match() -> Control:
 	player_mana.columns = 2
 	left_rail.add_child(player_mana)
 	player_hp_bar = _hp_bar()
+	player_hp_bar.gui_input.connect(_hp_target_input.bind("player"))
 	left_rail.add_child(player_hp_bar)
 	var left_panel := _panel(left_rail)
 	left_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -637,6 +1184,7 @@ func _build_match() -> Control:
 	bot_mana.columns = 2
 	right_rail.add_child(bot_mana)
 	bot_hp_bar = _hp_bar()
+	bot_hp_bar.gui_input.connect(_hp_target_input.bind("bot"))
 	right_rail.add_child(bot_hp_bar)
 	var right_spacer := Control.new()
 	right_spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -662,12 +1210,13 @@ func _build_match() -> Control:
 	return root
 
 func _new_match() -> void:
-	var saved: Dictionary = profile.decks.get("starter", {})
+	var active_id := str(profile.get("active_deck_id", "starter"))
+	var saved: Dictionary = profile.decks.get(active_id, profile.decks.get("starter", {}))
 	var source: Array = saved.get("card_ids", []).duplicate()
 	var foundation_id := str(saved.get("foundation_id", "pillar_fire"))
 	var vanguard_id := str(saved.get("vanguard_id", "ember_pup"))
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 101
+	rng.randomize()
 	_shuffle_with_rng(source, rng)
 	var bot_deck := source.duplicate()
 	_shuffle_with_rng(bot_deck, rng)
@@ -680,7 +1229,7 @@ func _new_player(deck: Array, foundation_id := "pillar_fire", vanguard_id := "em
 	var board: Array = []
 	board.resize(32)
 	board.fill(null)
-	return {"hp":100, "max_hp":100, "deck":deck, "hand":[], "board":board, "pillars":[], "mana":{}, "reserve":{}, "discard":[], "foundation":foundation_id, "vanguard":vanguard_id}
+	return {"hp":100, "max_hp":100, "deck":deck, "hand":[], "board":board, "pillars":[], "mana":{}, "discard":[], "foundation":foundation_id, "vanguard":vanguard_id}
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE and is_instance_valid(end_turn_button) and end_turn_button.visible:
@@ -690,19 +1239,19 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _surrender_match() -> void:
 	if match_state.is_empty() or bool(match_state.get("finished", false)): return
 	match_state.clear()
-	_show_screen("Home")
+	_show_screen("Lobby")
 	_notify("You surrendered the match.")
 
 func _draw_card(player: Dictionary) -> void:
 	if not player.deck.is_empty(): player.hand.append(player.deck.pop_back())
 
 func _play_hand_card(index: int) -> void:
-	if bool(match_state.busy) or index < 0 or index >= match_state.player.hand.size(): return
+	if bool(match_state.busy) or not match_state.targeting.is_empty() or index < 0 or index >= match_state.player.hand.size(): return
 	var id: String = match_state.player.hand[index]
 	_play_player_card(id, "hand", index)
 
 func _play_start_card(zone: String) -> void:
-	if bool(match_state.busy) or bool(match_state.finished): return
+	if bool(match_state.busy) or bool(match_state.finished) or not match_state.targeting.is_empty(): return
 	var id := str(match_state.player.get(zone, ""))
 	if not id.is_empty(): _play_player_card(id, zone, -1)
 
@@ -717,6 +1266,11 @@ func _restore_available_card(id: String, source: String) -> void:
 func _play_player_card(id: String, source: String, index: int) -> void:
 	var card := database.get_card(id, profile.merged_cards)
 	if card.is_pillar:
+		if not _can_pay(match_state.player.mana, card.cost):
+			match_state.message = "Not enough mana for %s." % card.display_name
+			_refresh_match()
+			return
+		_pay(match_state.player.mana, card.cost)
 		_remove_available_card(source, index)
 		match_state.player.pillars.append(_pillar_record(card.id))
 		match_state.message = "%s entered. It will produce mana at end of turn." % card.display_name
@@ -729,8 +1283,9 @@ func _play_player_card(id: String, source: String, index: int) -> void:
 		_pay(match_state.player.mana, cost)
 		_remove_available_card(source, index)
 		if card.card_type == "Spell":
-			_resolve_spell(card, match_state.player, match_state.bot)
-			match_state.player.discard.append(id)
+			if not _begin_player_spell(card):
+				_resolve_spell(card, match_state.player, match_state.bot, true)
+				match_state.player.discard.append(id)
 		else:
 			var slot := _random_empty_slot(match_state.player.board)
 			if slot < 0:
@@ -739,11 +1294,10 @@ func _play_player_card(id: String, source: String, index: int) -> void:
 				_refund(match_state.player.mana, cost)
 			else:
 				match_state.player.board[slot] = _unit_record(card)
-				_apply_on_play(card, match_state.bot)
+				_apply_on_play(card, match_state.bot, true, slot)
 				if match_state.bot.hp <= 0:
-					match_state.finished = true
-					match_state.message = "You win."
-				else:
+					_finish_match("You win.", true)
+				elif match_state.targeting.get("kind", "") != "effect":
 					match_state.message = "%s entered." % card.display_name
 	_refresh_match()
 
@@ -752,13 +1306,251 @@ func _pillar_record(card_id: String) -> Dictionary:
 	return {"uid":str(Time.get_ticks_usec()) + str(randi_range(10, 99)), "card_id":card_id, "element":card.element_tags[0]}
 
 func _unit_record(card: Dictionary) -> Dictionary:
-	return {"id":card.id, "attack":int(card.attack), "hp":int(card.max_hp), "max_hp":int(card.max_hp), "frozen":false, "strike_ready":false}
+	return {"id":card.id, "attack":int(card.attack), "hp":int(card.max_hp), "max_hp":int(card.max_hp), "frozen":0, "strike_ready":false, "abilities_used":{}}
 
-func _apply_on_play(card: Dictionary, opponent: Dictionary) -> void:
+func _apply_on_play(card: Dictionary, opponent: Dictionary, opponent_is_bot := true, source_slot := -1) -> void:
+	var owner: Dictionary = match_state.player if opponent_is_bot else match_state.bot
 	for reference in card.abilities:
 		var ability := _ability_ref(reference)
-		if ability.kind == "on_play" and ability.id == "Scorch":
-			opponent.hp -= _ability_strength(ability)
+		if ability.kind != "on_play": continue
+		match str(ability.id):
+			"Scorch":
+				var damage := _ability_strength(ability)
+				if opponent_is_bot:
+					_begin_effect_target("damage", damage, "any_damageable", str(card.id), source_slot)
+				else:
+					_bot_apply_damage_target(damage)
+			"Freeze":
+				if opponent_is_bot:
+					if _highest_threat_slot(opponent) >= 0: _begin_effect_target("freeze", _ability_strength(ability), "enemy_creature", str(card.id), source_slot)
+				else:
+					_apply_freeze_on_play(opponent, _ability_strength(ability))
+			"Bounce":
+				_apply_bounce_on_play(opponent, _ability_strength(ability), opponent_is_bot)
+			"Spawn Sapling":
+				_spawn_token(owner, "sapling_token")
+			"Elder Call":
+				_spawn_token(owner, "elder_sapling_token")
+			"Grove Blessing":
+				for friendly in owner.board:
+					if friendly == null: continue
+					var friendly_card := database.get_card(friendly.id, profile.merged_cards)
+					if str(friendly_card.card_type) != "Creature": continue
+					friendly.max_hp = int(friendly.max_hp) + _ability_strength(ability)
+					friendly.hp = int(friendly.hp) + _ability_strength(ability)
+	_refresh_nature_bonuses(owner)
+
+func _spawn_token(owner: Dictionary, token_id: String) -> bool:
+	var slot := _random_empty_slot(owner.board)
+	if slot < 0: return false
+	owner.board[slot] = _unit_record(database.get_card(token_id, profile.merged_cards))
+	return true
+
+func _highest_threat_slot(owner: Dictionary) -> int:
+	var best_slot := -1
+	var best_score := -INF
+	for slot in owner.board.size():
+		var unit: Variant = owner.board[slot]
+		if unit == null: continue
+		var candidate := database.get_card(str(unit.id), profile.merged_cards)
+		if str(candidate.card_type) != "Creature": continue
+		var score := _unit_threat(unit, candidate, owner)
+		if score > best_score:
+			best_score = score
+			best_slot = slot
+	return best_slot
+
+func _highest_value_slot(owner: Dictionary, opponent: Dictionary = {}) -> int:
+	var best_slot := -1
+	var best_score := -INF
+	for slot in owner.board.size():
+		var unit: Variant = owner.board[slot]
+		if unit == null: continue
+		var candidate := database.get_card(str(unit.id), profile.merged_cards)
+		var score := _unit_threat(unit, candidate, owner, opponent)
+		if score > best_score:
+			best_score = score
+			best_slot = slot
+	return best_slot
+
+func _apply_freeze_on_play(opponent: Dictionary, duration: int) -> void:
+	var slot := _highest_threat_slot(opponent)
+	if slot >= 0: opponent.board[slot].frozen = maxi(int(opponent.board[slot].get("frozen", 0)), duration)
+
+func _apply_bounce_on_play(opponent: Dictionary, count: int, opponent_is_bot := true) -> void:
+	for ignored in count:
+		var slot := _highest_threat_slot(opponent)
+		if slot < 0: return
+		_animate_bounced_card("bot" if opponent_is_bot else "player", slot, database.get_card(opponent.board[slot].id, profile.merged_cards))
+		opponent.hand.append(str(opponent.board[slot].id))
+		opponent.board[slot] = null
+
+func _animate_bounced_card(side: String, slot: int, card: Dictionary) -> void:
+	var nodes := bot_slot_nodes if side == "bot" else player_slot_nodes
+	var source: Control = nodes.get(slot)
+	if not is_instance_valid(source): return
+	_ability_flash(source, {"id":"Bounce", "cost":{}})
+	var ghost := _portrait_visual(card, {}, true, 104)
+	ghost.position = source.global_position
+	ghost.size = source.size
+	ghost.z_index = 700
+	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(ghost)
+	_ability_flash(ghost, {"id":"Bounce", "cost":{}})
+	var tween := ghost.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ghost, "position:y", ghost.position.y - 70.0, 0.42)
+	tween.tween_property(ghost, "modulate:a", 0.0, 0.42)
+	tween.chain().tween_callback(ghost.queue_free)
+
+func _begin_player_spell(card: Dictionary) -> bool:
+	var ability: Dictionary = _ability_ref(card.abilities[0]) if not card.abilities.is_empty() else {}
+	match str(card.id):
+		"fireball": _begin_effect_target("damage", _ability_strength(ability), "any_damageable", str(card.id), -1, true)
+		"ember_offering": _begin_effect_target("sacrifice_mana", _ability_strength(ability), "friendly_creature", str(card.id), -1, true)
+		"ashen_bargain": _begin_effect_target("sacrifice_draw", _ability_strength(ability), "friendly_creature", str(card.id), -1, true)
+		"berserker_draught": _begin_effect_target("rage", _ability_strength(ability), "any_card", str(card.id), -1, true)
+		_: return false
+	return true
+
+func _begin_effect_target(effect: String, strength: int, rule: String, card_id: String, source_slot := -1, pending_spell := false) -> void:
+	match_state.targeting = {"kind":"effect", "effect":effect, "strength":strength, "rule":rule, "card_id":card_id, "source":source_slot, "pending_spell":pending_spell}
+	match_state.message = "Select a highlighted target for %s." % database.get_card(card_id, profile.merged_cards).display_name
+
+func _board_target_clicked(side: String, slot: int) -> void:
+	if match_state.targeting.get("kind", "") == "ability":
+		if side == "bot": _enemy_slot_clicked(slot)
+		return
+	if match_state.targeting.get("kind", "") != "effect" or not _is_effect_targetable(side, slot): return
+	_resolve_player_effect_target(side, slot, false)
+
+func _hp_target_input(event: InputEvent, side: String) -> void:
+	if ((event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) or (event is InputEventScreenTouch and event.pressed)) and _is_hp_targetable():
+		_resolve_player_effect_target(side, -1, true)
+
+func _is_hp_targetable() -> bool:
+	return match_state.targeting.get("kind", "") == "effect" and str(match_state.targeting.get("rule", "")) == "any_damageable"
+
+func _is_effect_targetable(side: String, slot: int) -> bool:
+	if match_state.targeting.get("kind", "") != "effect": return false
+	var owner: Dictionary = match_state.player if side == "player" else match_state.bot
+	if slot < 0 or slot >= owner.board.size() or owner.board[slot] == null: return false
+	var card := database.get_card(owner.board[slot].id, profile.merged_cards)
+	var rule := str(match_state.targeting.get("rule", ""))
+	if rule == "friendly_creature": return side == "player" and str(card.card_type) == "Creature"
+	if rule == "enemy_creature": return side == "bot" and str(card.card_type) == "Creature"
+	if rule in ["any_damageable", "any_card"]: return int(card.max_hp) > 0
+	return false
+
+func _resolve_player_effect_target(side: String, slot: int, targets_player: bool) -> void:
+	var targeting: Dictionary = match_state.targeting.duplicate(true)
+	match_state.targeting = {}
+	var effect := str(targeting.effect)
+	var strength := int(targeting.strength)
+	if effect == "damage":
+		if targets_player: _deal_player_damage(side, strength)
+		else: _deal_unit_damage(side, slot, strength)
+	elif effect == "freeze":
+		match_state.bot.board[slot].frozen = maxi(int(match_state.bot.board[slot].get("frozen", 0)), strength)
+		var frozen_portrait: Control = bot_slot_nodes.get(slot)
+		if is_instance_valid(frozen_portrait): _ability_flash(frozen_portrait, {"id":"Freeze", "cost":{}})
+		match_state.message = "Target frozen for %d combat phase%s." % [strength, "" if strength == 1 else "s"]
+	elif effect in ["sacrifice_mana", "sacrifice_draw"]:
+		_sacrifice_unit("player", slot)
+		if effect == "sacrifice_mana":
+			_gain_mana(match_state.player.mana, "Fire", strength)
+			match_state.message = "The offering yields %d Fire mana." % strength
+		else:
+			for i in strength: _draw_card(match_state.player)
+			match_state.message = "Ashen Bargain draws %d cards." % strength
+	elif effect == "rage":
+		var owner: Dictionary = match_state.player if side == "player" else match_state.bot
+		if owner.board[slot] != null:
+			owner.board[slot].attack = int(owner.board[slot].attack) + strength
+			owner.board[slot].hp = int(owner.board[slot].hp) - 3
+			if int(owner.board[slot].hp) <= 0: _destroy_unit(side, slot)
+			match_state.message = "Berserker Draught grants +%d ATK and deals 3 damage." % strength
+	if bool(targeting.get("pending_spell", false)):
+		match_state.player.discard.append(str(targeting.card_id))
+	_refresh_match()
+
+func _deal_player_damage(side: String, amount: int) -> void:
+	var owner: Dictionary = match_state.player if side == "player" else match_state.bot
+	owner.hp = int(owner.hp) - amount
+	_sync_hp_ui()
+	_animate_hp_damage(player_hp_bar if side == "player" else bot_hp_bar, amount)
+	if int(owner.hp) <= 0:
+		_finish_match("The bot wins." if side == "player" else "You win.", side == "bot")
+
+func _deal_unit_damage(side: String, slot: int, amount: int) -> void:
+	var owner: Dictionary = match_state.player if side == "player" else match_state.bot
+	if slot < 0 or slot >= owner.board.size() or owner.board[slot] == null: return
+	owner.board[slot].hp = int(owner.board[slot].hp) - amount
+	if int(owner.board[slot].hp) <= 0: _destroy_unit(side, slot)
+	_refresh_match()
+	var nodes := player_slot_nodes if side == "player" else bot_slot_nodes
+	var portrait: Control = nodes.get(slot)
+	if is_instance_valid(portrait): _floating_damage(portrait, amount)
+
+func _sacrifice_unit(side: String, slot: int) -> void:
+	var owner: Dictionary = match_state.player if side == "player" else match_state.bot
+	if slot < 0 or slot >= owner.board.size() or owner.board[slot] == null: return
+	owner.discard.append(str(owner.board[slot].id))
+	owner.board[slot] = null
+
+func _destroy_unit(side: String, slot: int) -> void:
+	var owner: Dictionary = match_state.player if side == "player" else match_state.bot
+	if slot < 0 or slot >= owner.board.size() or owner.board[slot] == null: return
+	var unit: Dictionary = owner.board[slot]
+	var card := database.get_card(unit.id, profile.merged_cards)
+	owner.discard.append(str(unit.id))
+	owner.board[slot] = null
+	var spark := _card_ability_strength(card, "Last Spark")
+	if spark > 0: _deal_player_damage("bot" if side == "player" else "player", spark)
+
+func _bot_apply_damage_target(damage: int) -> void:
+	var target := _bot_damage_target(damage)
+	if bool(target.get("player", false)): _deal_player_damage("player", damage)
+	else: _deal_unit_damage("player", int(target.get("slot", -1)), damage)
+
+func _bot_damage_target(damage: int) -> Dictionary:
+	if int(match_state.player.hp) <= damage: return {"player":true}
+	var best := {"player":true, "score":-1000.0}
+	for slot in match_state.player.board.size():
+		var unit: Variant = match_state.player.board[slot]
+		if unit == null: continue
+		var card := database.get_card(unit.id, profile.merged_cards)
+		if int(card.max_hp) <= 0: continue
+		var threat := _unit_threat(unit, card, match_state.player, match_state.bot)
+		var score := threat - float(unit.hp) * 1.5
+		if int(unit.hp) <= damage: score += 1000.0 + threat * 3.0
+		if score > float(best.score): best = {"player":false, "slot":slot, "score":score}
+	return best
+
+func _unit_threat(unit: Dictionary, card: Dictionary, owner: Dictionary = {}, opponent: Dictionary = {}) -> float:
+	var score := float(unit.get("attack", 0)) * 4.0 + float(unit.get("hp", 0))
+	for reference in card.get("abilities", []):
+		var ability := _ability_ref(reference)
+		score += float(_ability_strength(ability)) * (3.0 if str(ability.id) in ["Burn", "Scald", "Flame Strike", "Fury", "Growth"] else 1.5)
+		if str(ability.id) in ["Freeze", "Strike", "Regeneration"]: score += 6.0
+	if str(card.card_type) == "Structure": score += 5.0
+	if not owner.is_empty():
+		var damaged_allies := 0
+		var matching_subtypes := 0
+		for ally in owner.get("board", []):
+			if ally == null: continue
+			if int(ally.hp) < int(ally.max_hp): damaged_allies += 1
+			var ally_card := database.get_card(ally.id, profile.merged_cards)
+			for subtype in card.get("subtypes", []):
+				if subtype in ally_card.get("subtypes", []): matching_subtypes += 1
+		if _has_ability(card, "Regeneration"): score += float(damaged_allies) * 2.0 + (4.0 if int(owner.get("hp", 100)) < 70 else 0.0)
+		score += float(maxi(0, matching_subtypes - card.get("subtypes", []).size())) * 0.75
+	if not opponent.is_empty() and _has_ability(card, "Freeze"):
+		var largest_attack := 0
+		for enemy in opponent.get("board", []):
+			if enemy != null: largest_attack = maxi(largest_attack, int(enemy.attack))
+		score += float(largest_attack) * 0.5
+	return score
 
 func _random_empty_slot(board: Array) -> int:
 	var empty: Array[int] = []
@@ -784,21 +1576,84 @@ func _pillar_clicked(index: int) -> void:
 		match_state.message = "Those Pillars are not a compatible base pair."
 		_refresh_match()
 		return
-	for remove_index in [maxi(source, index), mini(source, index)]: match_state.player.pillars.remove_at(remove_index)
-	var hybrid_id := "pillar_" + hybrid.to_lower()
+	match_state.targeting = {"kind":"pillar_attune", "source":source, "target":index, "hybrid":hybrid, "elements":[str(first.element), str(second.element)]}
+	match_state.message = "Choose which source element the %s Pillar will Attune to." % hybrid
+	_refresh_match()
+	_show_attune_overlay(source, index, hybrid, [str(first.element), str(second.element)])
+
+func _attuned_pillar_id(hybrid: String, attunement: String) -> String:
+	return "pillar_%s_%s" % [hybrid.to_lower(), attunement.to_lower()]
+
+func _show_attune_overlay(source: int, target: int, hybrid: String, elements: Array) -> void:
+	var previous := get_node_or_null("AttuneOverlay")
+	if previous: previous.queue_free()
+	var shade := ColorRect.new()
+	shade.name = "AttuneOverlay"
+	shade.color = Color(0.01, 0.02, 0.04, 0.92)
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.z_index = 650
+	add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.add_child(center)
+	var box := VBoxContainer.new()
+	box.custom_minimum_size = Vector2(620, 500)
+	box.add_theme_constant_override("separation", 14)
+	box.add_child(_section_title("Attune the %s Pillar" % hybrid, "Choose which source element pays for this Pillar when included in a deck."))
+	var choices := HBoxContainer.new()
+	choices.alignment = BoxContainer.ALIGNMENT_CENTER
+	choices.add_theme_constant_override("separation", 28)
+	for element in elements:
+		var id := _attuned_pillar_id(hybrid, str(element))
+		var card := database.get_card(id, profile.merged_cards)
+		var choice := VBoxContainer.new()
+		choice.add_child(_full_card(card, -1))
+		var attune := _button("Attune to %s" % element, _element_color(str(element)))
+		attune.pressed.connect(_complete_pillar_attunement.bind(source, target, id))
+		choice.add_child(attune)
+		choices.add_child(choice)
+	box.add_child(choices)
+	var cancel := _button("Cancel merge", MUTED)
+	cancel.pressed.connect(_cancel_pillar_attunement)
+	box.add_child(cancel)
+	center.add_child(_panel(box))
+
+func _complete_pillar_attunement(source: int, target: int, hybrid_id: String) -> void:
+	if source < 0 or target < 0 or source == target or source >= match_state.player.pillars.size() or target >= match_state.player.pillars.size():
+		_cancel_pillar_attunement()
+		return
+	for remove_index in [maxi(source, target), mini(source, target)]: match_state.player.pillars.remove_at(remove_index)
 	match_state.player.pillars.append(_pillar_record(hybrid_id))
 	match_state.targeting = {}
-	match_state.message = "%s Pillar created. It will produce mana at end of turn." % hybrid
+	var card := database.get_card(hybrid_id, profile.merged_cards)
+	match_state.message = "%s created. It will produce mana at end of turn." % card.display_name
+	var overlay := get_node_or_null("AttuneOverlay")
+	if overlay: overlay.queue_free()
+	_refresh_match()
+
+func _cancel_pillar_attunement() -> void:
+	match_state.targeting = {}
+	match_state.message = "Pillar merge cancelled."
+	var overlay := get_node_or_null("AttuneOverlay")
+	if overlay: overlay.queue_free()
 	_refresh_match()
 
 func _activate_ability(slot: int, ability_index: int) -> void:
-	if bool(match_state.busy) or slot < 0 or slot >= 32: return
+	if bool(match_state.busy) or not match_state.targeting.is_empty() or slot < 0 or slot >= 32: return
 	var unit: Variant = match_state.player.board[slot]
 	if unit == null: return
 	var card := database.get_card(unit.id, profile.merged_cards)
 	if ability_index >= card.abilities.size(): return
 	var ability := _ability_ref(card.abilities[ability_index])
 	if ability.kind != "activated": return
+	if int(unit.get("frozen", 0)) > 0:
+		match_state.message = "%s is frozen and cannot activate abilities." % card.display_name
+		_refresh_match()
+		return
+	if bool(unit.get("abilities_used", {}).get(str(ability_index), false)) and not bool(ability.get("repeatable", false)):
+		match_state.message = "%s has already used that ability this turn." % card.display_name
+		_refresh_match()
+		return
 	if ability.id == "Strike" and bool(unit.get("strike_ready", false)):
 		match_state.message = "Strike is already prepared for this combat."
 		_refresh_match()
@@ -825,11 +1680,17 @@ func _enemy_slot_clicked(slot: int) -> void:
 	_refresh_match()
 
 func _execute_ability(source_slot: int, ability: Dictionary, target_slot: int) -> void:
+	var source_card := database.get_card(match_state.player.board[source_slot].id, profile.merged_cards)
+	for ability_index in source_card.abilities.size():
+		if _ability_ref(source_card.abilities[ability_index]).id == ability.id:
+			match_state.player.board[source_slot].get_or_add("abilities_used", {})[str(ability_index)] = true
+			break
 	call_deferred("_flash_board_ability", source_slot, ability, true)
 	match ability.id:
 		"Freeze":
-			match_state.bot.board[target_slot].frozen = true
-			match_state.message = "The target is frozen for its next combat."
+			var duration := maxi(1, _ability_strength(ability))
+			match_state.bot.board[target_slot].frozen = maxi(int(match_state.bot.board[target_slot].get("frozen", 0)), duration)
+			match_state.message = "The target is frozen for %d turn%s." % [duration, "" if duration == 1 else "s"]
 		"Strike":
 			match_state.player.board[source_slot].strike_ready = true
 			match_state.message = "Strike prepared: a random opposing creature will be attacked this combat."
@@ -837,9 +1698,14 @@ func _execute_ability(source_slot: int, ability: Dictionary, target_slot: int) -
 			var healing := _ability_strength(ability)
 			match_state.player.hp = mini(100, int(match_state.player.hp) + healing)
 			match_state.message = "Restored %d HP." % healing
+		"Spawn Sapling":
+			if _spawn_token(match_state.player, "sapling_token"):
+				match_state.message = "A Sapling joins your battlefield."
+			else:
+				match_state.message = "The battlefield is full."
 
 func _end_turn() -> void:
-	if bool(match_state.busy) or bool(match_state.finished): return
+	if bool(match_state.busy) or bool(match_state.finished) or not match_state.targeting.is_empty(): return
 	match_state.busy = true
 	match_state.targeting = {}
 	_refresh_match()
@@ -855,8 +1721,6 @@ func _end_turn() -> void:
 		_refresh_match()
 		return
 	match_state.turn += 1
-	match_state.player.mana = match_state.player.reserve.duplicate(true)
-	match_state.player.reserve.clear()
 	_apply_turn_start(match_state.player)
 	_draw_card(match_state.player)
 	match_state.busy = false
@@ -866,8 +1730,6 @@ func _end_turn() -> void:
 func _bot_turn() -> void:
 	var bot: Dictionary = match_state.bot
 	var player: Dictionary = match_state.player
-	bot.mana = bot.reserve.duplicate(true)
-	bot.reserve.clear()
 	_apply_turn_start(bot)
 	_draw_card(bot)
 	if not str(bot.get("foundation", "")).is_empty():
@@ -879,47 +1741,76 @@ func _bot_turn() -> void:
 		bot.vanguard = ""
 	for i in range(bot.hand.size() - 1, -1, -1):
 		var card := database.get_card(bot.hand[i], profile.merged_cards)
-		if card.is_pillar:
+		if card.is_pillar and _can_pay(bot.mana, card.cost):
+			_pay(bot.mana, card.cost)
 			bot.hand.remove_at(i)
 			bot.pillars.append(_pillar_record(card.id))
 	_bot_merge_pillars(bot)
 	for i in range(bot.hand.size() - 1, -1, -1):
 		var card := database.get_card(bot.hand[i], profile.merged_cards)
 		if not card.is_pillar and _can_pay(bot.mana, card.cost):
+			if card.card_type == "Spell" and not _bot_can_use_spell(card): continue
 			var slot := _random_empty_slot(bot.board)
 			if card.card_type != "Spell" and slot < 0: continue
 			_pay(bot.mana, card.cost)
 			bot.hand.remove_at(i)
 			if card.card_type == "Spell":
-				_resolve_spell(card, bot, player)
+				_resolve_bot_spell(card)
 				bot.discard.append(card.id)
 			else:
 				bot.board[slot] = _unit_record(card)
-				_apply_on_play(card, player)
+				_apply_on_play(card, player, false, slot)
 				if player.hp <= 0:
-					match_state.finished = true
-					match_state.message = "The bot wins."
+					_finish_match("The bot wins.", false)
 					return
 	_refresh_match()
-	for slot in 32:
-		if bot.board[slot] != null:
-			var card := database.get_card(bot.board[slot].id, profile.merged_cards)
-			for reference in card.abilities:
-				var ability := _ability_ref(reference)
-				if ability.id == "Strike" and _can_pay(bot.mana, ability.cost):
-					_pay(bot.mana, ability.cost)
-					bot.board[slot].strike_ready = true
-					var bot_portrait: Control = bot_slot_nodes.get(slot)
-					if is_instance_valid(bot_portrait): _ability_flash(bot_portrait, ability)
+	_bot_activate_board_abilities(bot, player)
+	_refresh_match()
 	await _resolve_combat_animated(bot, player, false)
 	await _produce_pillar_mana_animated(bot, bot_pillars)
 
+func _bot_activate_board_abilities(bot: Dictionary, player: Dictionary) -> void:
+	for slot in 32:
+		if bot.board[slot] != null:
+			if int(bot.board[slot].get("frozen", 0)) > 0: continue
+			var card := database.get_card(bot.board[slot].id, profile.merged_cards)
+			for ability_index in card.abilities.size():
+				var ability := _ability_ref(card.abilities[ability_index])
+				if ability.kind != "activated" or bool(bot.board[slot].get("abilities_used", {}).get(str(ability_index), false)) or not _can_pay(bot.mana, ability.cost): continue
+				var activated := false
+				match str(ability.id):
+					"Strike":
+						bot.board[slot].strike_ready = true
+						activated = true
+					"Freeze":
+						var target := _highest_value_slot(player, bot)
+						if target >= 0:
+							player.board[target].frozen = maxi(int(player.board[target].get("frozen", 0)), maxi(1, _ability_strength(ability)))
+							activated = true
+							var target_portrait: Control = player_slot_nodes.get(target)
+							if is_instance_valid(target_portrait): _ability_flash(target_portrait, ability)
+					"Spawn Sapling":
+						activated = _spawn_token(bot, "sapling_token")
+				if activated:
+					_pay(bot.mana, ability.cost)
+					bot.board[slot].get_or_add("abilities_used", {})[str(ability_index)] = true
+					var bot_portrait: Control = bot_slot_nodes.get(slot)
+					if is_instance_valid(bot_portrait): _ability_flash(bot_portrait, ability)
+
 func _flash_board_ability(slot: int, ability: Dictionary, player_owned: bool) -> void:
 	var nodes := player_slot_nodes if player_owned else bot_slot_nodes
-	var portrait: Control = nodes.get(slot)
+	# Deferred ability flashes can outlive a board redraw, so keep the lookup as a
+	# Variant until validity has been checked instead of assigning a freed object.
+	var portrait: Variant = nodes.get(slot)
 	if is_instance_valid(portrait): _ability_flash(portrait, ability)
 
 func _resolve_combat_animated(attacker: Dictionary, defender: Dictionary, player_attacking: bool) -> void:
+	var ward_active := int(defender.get("cinder_ward_turns", 0)) > 0
+	var provoke_targets: Array[int] = []
+	for defender_slot in defender.board.size():
+		if defender.board[defender_slot] == null: continue
+		var provoke_card := database.get_card(defender.board[defender_slot].id, profile.merged_cards)
+		for ignored in _card_ability_strength(provoke_card, "Provoke"): provoke_targets.append(defender_slot)
 	var slots: Array[int] = []
 	for i in 32:
 		if attacker.board[i] != null:
@@ -928,8 +1819,7 @@ func _resolve_combat_animated(attacker: Dictionary, defender: Dictionary, player
 	var delay := COMBAT_DURATION / maxf(1.0, float(slots.size()))
 	for slot in slots:
 		var unit: Dictionary = attacker.board[slot]
-		if bool(unit.frozen):
-			unit.frozen = false
+		if int(unit.get("frozen", 0)) > 0:
 			await get_tree().create_timer(delay).timeout
 			continue
 		var slot_nodes: Dictionary = player_slot_nodes if player_attacking else bot_slot_nodes
@@ -937,37 +1827,46 @@ func _resolve_combat_animated(attacker: Dictionary, defender: Dictionary, player
 		if tile: _attack_wave(tile)
 		var card := database.get_card(unit.id, profile.merged_cards)
 		var damage := int(unit.attack)
-		var target_slot := _random_occupied_slot(defender.board) if bool(unit.get("strike_ready", false)) else -1
+		while not provoke_targets.is_empty() and defender.board[provoke_targets[0]] == null: provoke_targets.pop_front()
+		var target_slot: int = int(provoke_targets.pop_front()) if not provoke_targets.is_empty() else (_random_occupied_slot(defender.board) if bool(unit.get("strike_ready", false)) else -1)
 		if target_slot >= 0 and target_slot < 32 and defender.board[target_slot] != null:
 			damage += _card_ability_strength(card, "Flame Strike")
 			var target_unit: Dictionary = defender.board[target_slot]
 			var target_card := database.get_card(target_unit.id, profile.merged_cards)
 			var return_damage := int(target_unit.attack)
+			damage = maxi(0, damage - _card_ability_strength(target_card, "Shell"))
+			return_damage = maxi(0, return_damage - _card_ability_strength(card, "Shell"))
 			target_unit.hp -= damage
 			unit.hp -= return_damage
+			_sync_unit_portrait("bot" if player_attacking else "player", target_slot)
+			_sync_unit_portrait("player" if player_attacking else "bot", slot)
 			unit.strike_ready = false
 			var target_nodes: Dictionary = bot_slot_nodes if player_attacking else player_slot_nodes
 			var target_tile: Control = target_nodes.get(target_slot)
+			if target_tile and _has_ability(target_card, "Provoke"): _ability_flash(target_tile, _card_ability(target_card, "Provoke"))
 			if target_tile: _floating_damage(target_tile, damage)
 			if return_damage > 0 and tile: _floating_damage(tile, return_damage)
 			var target_destroyed: bool = int(target_unit.hp) <= 0
 			var attacker_destroyed: bool = int(unit.hp) <= 0
 			if target_destroyed:
-				attacker.hp -= _card_ability_strength(target_card, "Last Spark")
+				var target_spark := _card_ability_strength(target_card, "Last Spark")
+				attacker.hp -= target_spark
+				if target_spark > 0: _animate_hp_damage(player_hp_bar if player_attacking else bot_hp_bar, target_spark)
 				defender.discard.append(target_unit.id)
 				defender.board[target_slot] = null
 			if attacker_destroyed:
-				defender.hp -= _card_ability_strength(card, "Last Spark")
+				var attacker_spark := _card_ability_strength(card, "Last Spark")
+				defender.hp -= attacker_spark
+				if attacker_spark > 0: _animate_hp_damage(bot_hp_bar if player_attacking else player_hp_bar, attacker_spark)
 				attacker.discard.append(unit.id)
 				attacker.board[slot] = null
 			if attacker.hp <= 0 or defender.hp <= 0:
-				match_state.finished = true
 				if attacker.hp <= 0 and defender.hp <= 0:
-					match_state.message = "The battle ends in a draw."
+					_finish_match("The battle ends in a draw.", false)
 				elif defender.hp <= 0:
-					match_state.message = "You win." if player_attacking else "The bot wins."
+					_finish_match("You win." if player_attacking else "The bot wins.", player_attacking)
 				else:
-					match_state.message = "The bot wins." if player_attacking else "You win."
+					_finish_match("The bot wins." if player_attacking else "You win.", not player_attacking)
 				return
 		else:
 			damage += _card_ability_strength(card, "Burn")
@@ -975,13 +1874,21 @@ func _resolve_combat_animated(attacker: Dictionary, defender: Dictionary, player
 			defender.hp -= damage
 			unit.attack += _card_ability_strength(card, "Fury")
 			unit.strike_ready = false
-			_floating_damage(bot_stats if player_attacking else player_stats, damage)
+			_animate_hp_damage(bot_hp_bar if player_attacking else player_hp_bar, damage)
+			if ward_active:
+				unit.hp = int(unit.hp) - 2
+				_sync_unit_portrait("player" if player_attacking else "bot", slot)
+				if tile: _floating_damage(tile, 2)
+				if int(unit.hp) <= 0: _destroy_unit("player" if player_attacking else "bot", slot)
 		if defender.hp <= 0:
-			match_state.finished = true
-			match_state.message = "You win." if player_attacking else "The bot wins."
+			_finish_match("You win." if player_attacking else "The bot wins.", player_attacking)
 			return
 		await get_tree().create_timer(delay).timeout
 		_refresh_match()
+	for frozen_unit in attacker.board:
+		if frozen_unit != null and int(frozen_unit.get("frozen", 0)) > 0: frozen_unit.frozen = maxi(0, int(frozen_unit.frozen) - 1)
+	if ward_active: defender.cinder_ward_turns = maxi(0, int(defender.cinder_ward_turns) - 1)
+	_refresh_match()
 
 func _attack_wave(tile: Control) -> void:
 	var overlay := Control.new()
@@ -1027,7 +1934,7 @@ func _ability_flash(portrait: Control, ability: Dictionary) -> void:
 	tween.tween_property(overlay, "modulate:a", 0.0, 0.24)
 	tween.tween_callback(overlay.queue_free)
 
-func _floating_damage(target: Control, amount: int) -> void:
+func _floating_damage(target: Control, amount: int, random_offset := false) -> void:
 	var overlay := Control.new()
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1037,7 +1944,11 @@ func _floating_damage(target: Control, amount: int) -> void:
 	label.add_theme_font_size_override("font_size", 22)
 	label.add_theme_color_override("font_color", FIRE)
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	label.position = Vector2(target.size.x * 0.5, 0)
+	var offset := Vector2.ZERO
+	if random_offset:
+		var rng: RandomNumberGenerator = match_state.get("rng", RandomNumberGenerator.new())
+		offset = Vector2(rng.randf_range(-12.0, 12.0), rng.randf_range(-4.0, 5.0))
+	label.position = Vector2(target.size.x * 0.5, 0) + offset
 	overlay.add_child(label)
 	var tween := target.create_tween()
 	tween.set_parallel(true)
@@ -1045,22 +1956,48 @@ func _floating_damage(target: Control, amount: int) -> void:
 	tween.tween_property(label, "modulate:a", 0.0, 0.55)
 	tween.chain().tween_callback(overlay.queue_free)
 
-func _prepare_reserve(player: Dictionary) -> void:
-	player.reserve.clear()
-	for pillar in player.pillars: _gain_mana(player.reserve, pillar.element, 1)
-	player.mana.clear()
+func _animate_hp_damage(bar: Control, amount: int) -> void:
+	if not is_instance_valid(bar) or amount <= 0: return
+	_sync_hp_ui()
+	var flash := Panel.new()
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	flash.add_theme_stylebox_override("panel", _box(Color(FIRE, 0.30), 7, 3, Color.WHITE))
+	bar.add_child(flash)
+	var tween := bar.create_tween()
+	tween.tween_property(flash, "modulate:a", 0.15, 0.12)
+	tween.tween_property(flash, "modulate:a", 1.0, 0.12)
+	tween.tween_property(flash, "modulate:a", 0.0, 0.32)
+	tween.tween_callback(flash.queue_free)
+	_floating_damage(bar, amount, true)
+
+func _sync_hp_ui() -> void:
+	if match_state.is_empty() or not is_instance_valid(player_hp_bar) or not is_instance_valid(bot_hp_bar): return
+	_rebuild_hp_bar(player_hp_bar, match_state.player, _incoming_face_damage(match_state.bot, match_state.player))
+	_rebuild_hp_bar(bot_hp_bar, match_state.bot, _incoming_face_damage(match_state.player, match_state.bot))
+	if is_instance_valid(player_stats): player_stats.text = "YOU  %d HP    Deck %d    Discard %d" % [match_state.player.hp, match_state.player.deck.size(), match_state.player.discard.size()]
+	if is_instance_valid(bot_stats): bot_stats.text = "BOT  %d HP    Hand %d    Deck %d" % [match_state.bot.hp, match_state.bot.hand.size(), match_state.bot.deck.size()]
+
+func _sync_unit_portrait(side: String, slot: int) -> void:
+	var owner: Dictionary = match_state.player if side == "player" else match_state.bot
+	var nodes: Dictionary = player_slot_nodes if side == "player" else bot_slot_nodes
+	var portrait: Control = nodes.get(slot)
+	if not is_instance_valid(portrait) or slot < 0 or slot >= owner.board.size() or owner.board[slot] == null: return
+	var stats: Label = portrait.find_child("Stats", true, false)
+	if stats: stats.text = "%d / %d" % [int(owner.board[slot].attack), int(owner.board[slot].hp)]
+
+func _add_pillar_mana(player: Dictionary) -> void:
+	for pillar in player.pillars: _gain_mana(player.mana, pillar.element, 1)
 
 func _produce_pillar_mana_animated(player: Dictionary, container: HBoxContainer) -> void:
-	player.reserve.clear()
-	player.mana.clear()
 	match_state.message = "Pillars are producing mana."
 	if is_instance_valid(match_status): match_status.text = match_state.message
 	for pillar in player.pillars:
-		_gain_mana(player.reserve, str(pillar.element), 1)
+		_gain_mana(player.mana, str(pillar.element), 1)
 	for stack in container.get_children():
 		if not stack.is_queued_for_deletion() and stack is VBoxContainer and bool(stack.get_meta("is_pillar", false)) and stack.get_child_count() > 0 and stack.get_child(0) is Control:
 			_pillar_production_flash(stack.get_child(0))
-	_rebuild_mana(player_mana if container == player_pillars else bot_mana, player.reserve)
+	_rebuild_mana(player_mana if container == player_pillars else bot_mana, player.mana)
 	await get_tree().create_timer(1.0).timeout
 
 func _pillar_production_flash(portrait: Control) -> void:
@@ -1077,38 +2014,191 @@ func _pillar_production_flash(portrait: Control) -> void:
 	tween.tween_callback(glow.queue_free)
 
 func _apply_turn_start(player: Dictionary) -> void:
-	for unit in player.board:
+	for slot in player.board.size():
+		var unit: Variant = player.board[slot]
 		if unit == null: continue
+		unit.abilities_used = {}
 		var card := database.get_card(unit.id, profile.merged_cards)
 		unit.attack += _card_ability_strength(card, "Growth")
 		if _has_ability(card, "Regeneration"):
 			player.hp = mini(100, int(player.hp) + 2)
 			unit.hp = mini(int(unit.max_hp), int(unit.hp) + 1)
+		var sprout_count := _card_ability_strength(card, "Sprout")
+		for ignored in sprout_count: _spawn_token(player, "sapling_token")
+		var nurture := _card_ability_strength(card, "Nurture")
+		if nurture > 0:
+			var target := _highest_friendly_value_slot(player, slot)
+			if target >= 0:
+				player.board[target].attack = int(player.board[target].attack) + nurture
+				player.board[target].max_hp = int(player.board[target].max_hp) + nurture
+				player.board[target].hp = int(player.board[target].hp) + nurture
+	_refresh_nature_bonuses(player)
+
+func _highest_friendly_value_slot(owner: Dictionary, excluded_slot: int) -> int:
+	var best_slot := -1
+	var best_score := -INF
+	for slot in owner.board.size():
+		if slot == excluded_slot or owner.board[slot] == null: continue
+		var card := database.get_card(owner.board[slot].id, profile.merged_cards)
+		if str(card.card_type) != "Creature": continue
+		var score := _unit_threat(owner.board[slot], card, owner)
+		if score > best_score:
+			best_score = score
+			best_slot = slot
+	return best_slot
+
+func _refresh_nature_bonuses(owner: Dictionary) -> void:
+	if owner.is_empty() or not owner.has("board"): return
+	for slot in owner.board.size():
+		var unit: Variant = owner.board[slot]
+		if unit == null: continue
+		var card := database.get_card(unit.id, profile.merged_cards)
+		if str(card.card_type) != "Creature": continue
+		var desired_attack := 0
+		var desired_hp := 0
+		var pack_strength := _card_ability_strength(card, "Pack Growth")
+		var living_strength := _card_ability_strength(card, "Living Grove")
+		for other_slot in owner.board.size():
+			if other_slot == slot or owner.board[other_slot] == null: continue
+			var other_card := database.get_card(owner.board[other_slot].id, profile.merged_cards)
+			if str(other_card.card_type) != "Creature": continue
+			if living_strength > 0:
+				desired_attack += living_strength
+				desired_hp += living_strength
+			if pack_strength > 0:
+				for subtype in card.get("subtypes", []):
+					if subtype in other_card.get("subtypes", []):
+						desired_attack += pack_strength
+						desired_hp += pack_strength
+						break
+			if "Elf" in card.get("subtypes", []): desired_attack += _card_ability_strength(other_card, "Elf Chorus")
+		var attack_delta := desired_attack - int(unit.get("nature_attack_bonus", 0))
+		var hp_delta := desired_hp - int(unit.get("nature_hp_bonus", 0))
+		if attack_delta != 0: unit.attack = int(unit.attack) + attack_delta
+		if hp_delta != 0:
+			unit.max_hp = maxi(1, int(unit.max_hp) + hp_delta)
+			unit.hp = clampi(int(unit.hp) + hp_delta, 1, int(unit.max_hp))
+		unit.nature_attack_bonus = desired_attack
+		unit.nature_hp_bonus = desired_hp
 
 func _bot_merge_pillars(player: Dictionary) -> void:
 	for i in player.pillars.size():
 		for j in range(i + 1, player.pillars.size()):
 			var hybrid := fusion_engine.fusion_element(player.pillars[i].element, player.pillars[j].element)
 			if not hybrid.is_empty():
+				var elements: Array[String] = [str(player.pillars[i].element), str(player.pillars[j].element)]
+				var attunement := _bot_attunement_choice(player, elements)
 				player.pillars.remove_at(j)
 				player.pillars.remove_at(i)
-				player.pillars.append(_pillar_record("pillar_" + hybrid.to_lower()))
+				player.pillars.append(_pillar_record(_attuned_pillar_id(hybrid, attunement)))
 				return
 
-func _resolve_spell(card: Dictionary, owner: Dictionary, opponent: Dictionary) -> void:
+func _bot_attunement_choice(player: Dictionary, elements: Array[String]) -> String:
+	var scores := {}
+	for element in elements: scores[element] = -float(player.mana.get(element, 0))
+	for id in player.hand:
+		var card := database.get_card(str(id), profile.merged_cards)
+		for element in elements: scores[element] = float(scores[element]) + float(card.cost.get(element, 0))
+	if float(scores[elements[1]]) > float(scores[elements[0]]): return elements[1]
+	return elements[0]
+
+func _resolve_spell(card: Dictionary, owner: Dictionary, opponent: Dictionary, opponent_is_bot: bool) -> void:
 	var strength := _ability_strength(_ability_ref(card.abilities[0])) if not card.abilities.is_empty() else 0
 	match card.id:
-		"fireball": opponent.hp -= strength
+		"fire_rain":
+			var opposing_side := "bot" if opponent_is_bot else "player"
+			var targets: Array[int] = []
+			for slot in opponent.board.size():
+				if opponent.board[slot] != null and str(database.get_card(opponent.board[slot].id, profile.merged_cards).card_type) in ["Creature", "Structure"]: targets.append(slot)
+			for slot in targets: _deal_unit_damage(opposing_side, slot, strength)
+		"cinder_ward": owner.cinder_ward_turns = maxi(int(owner.get("cinder_ward_turns", 0)), int(_ability_ref(card.abilities[0]).get("duration", 3)))
 		"healing_rain": owner.hp = mini(100, int(owner.hp) + strength)
 		"regrowth":
 			var target := _first_occupied_slot(owner.board)
 			if target >= 0: owner.board[target].hp = mini(int(owner.board[target].max_hp), int(owner.board[target].hp) + strength)
 	match_state.message = "%s resolved." % card.display_name
 
+func _resolve_bot_spell(card: Dictionary) -> void:
+	var ability: Dictionary = _ability_ref(card.abilities[0]) if not card.abilities.is_empty() else {}
+	var strength := _ability_strength(ability)
+	match str(card.id):
+		"fireball": _bot_apply_damage_target(strength)
+		"ember_offering":
+			var slot := _bot_sacrifice_slot()
+			if slot >= 0:
+				_sacrifice_unit("bot", slot)
+				_gain_mana(match_state.bot.mana, "Fire", strength)
+		"ashen_bargain":
+			var slot := _bot_sacrifice_slot()
+			if slot >= 0:
+				_sacrifice_unit("bot", slot)
+				for i in strength: _draw_card(match_state.bot)
+		"berserker_draught":
+			var slot := _bot_buff_slot()
+			if slot >= 0:
+				match_state.bot.board[slot].attack = int(match_state.bot.board[slot].attack) + strength
+				match_state.bot.board[slot].hp = int(match_state.bot.board[slot].hp) - 3
+				if int(match_state.bot.board[slot].hp) <= 0: _destroy_unit("bot", slot)
+		_: _resolve_spell(card, match_state.bot, match_state.player, false)
+
+func _bot_sacrifice_slot() -> int:
+	var best_slot := -1
+	var best_score := INF
+	for slot in match_state.bot.board.size():
+		var unit: Variant = match_state.bot.board[slot]
+		if unit == null: continue
+		var card := database.get_card(unit.id, profile.merged_cards)
+		if str(card.card_type) != "Creature": continue
+		var score := _unit_threat(unit, card, match_state.bot, match_state.player)
+		if score < best_score:
+			best_score = score
+			best_slot = slot
+	return best_slot
+
+func _bot_buff_slot() -> int:
+	var best_slot := -1
+	var best_score := -INF
+	for slot in match_state.bot.board.size():
+		var unit: Variant = match_state.bot.board[slot]
+		if unit == null: continue
+		var card := database.get_card(unit.id, profile.merged_cards)
+		if int(card.max_hp) <= 0: continue
+		var survival_bonus := 100.0 if int(unit.hp) > 3 else 0.0
+		var score := survival_bonus + _unit_threat(unit, card, match_state.bot, match_state.player)
+		if score > best_score:
+			best_score = score
+			best_slot = slot
+	return best_slot
+
+func _finish_match(message: String, player_won: bool) -> void:
+	if bool(match_state.get("finished", false)): return
+	match_state.finished = true
+	match_state.message = message
+	if not bool(match_state.get("reward_applied", false)):
+		var rewards: Dictionary = game_config.get("match_rewards", {})
+		profile.xp = int(profile.get("xp", 0)) + int(rewards.get("win_xp" if player_won else "loss_xp", 0))
+		if player_won: profile.currency = int(profile.get("currency", 0)) + int(rewards.get("win_currency", 0))
+		var next_level_xp := int(profile.get("level", 1)) * 500
+		while int(profile.xp) >= next_level_xp:
+			profile.level = int(profile.get("level", 1)) + 1
+			next_level_xp = int(profile.level) * 500
+		match_state.reward_applied = true
+		store.save_profile()
+	call_deferred("_return_to_lobby_after_match", message)
+
+func _return_to_lobby_after_match(message: String) -> void:
+	await get_tree().create_timer(1.15).timeout
+	if match_state.is_empty() or not bool(match_state.get("finished", false)): return
+	match_state.clear()
+	_show_screen("Lobby")
+	_notify(message)
+
 func _refresh_match() -> void:
 	if match_header == null: return
+	_refresh_nature_bonuses(match_state.player)
+	_refresh_nature_bonuses(match_state.bot)
 	match_header.text = "TURN %d  |  YOUR ACTIONS" % match_state.turn
-	end_turn_button.disabled = bool(match_state.busy)
+	end_turn_button.disabled = bool(match_state.busy) or not match_state.targeting.is_empty()
 	player_stats.text = "YOU  %d HP    Deck %d    Discard %d" % [match_state.player.hp, match_state.player.deck.size(), match_state.player.discard.size()]
 	bot_stats.text = "BOT  %d HP    Hand %d    Deck %d" % [match_state.bot.hp, match_state.bot.hand.size(), match_state.bot.deck.size()]
 	match_status.text = match_state.message
@@ -1116,13 +2206,15 @@ func _refresh_match() -> void:
 	_rebuild_mana(bot_mana, match_state.bot.mana)
 	_rebuild_hp_bar(player_hp_bar, match_state.player, _incoming_face_damage(match_state.bot, match_state.player))
 	_rebuild_hp_bar(bot_hp_bar, match_state.bot, _incoming_face_damage(match_state.player, match_state.bot))
+	_update_hp_aim(player_hp_bar)
+	_update_hp_aim(bot_hp_bar)
 	for child in opponent_hand.get_children(): child.queue_free()
 	for i in match_state.bot.hand.size():
 		var opponent_card := database.get_card(match_state.bot.hand[i], profile.merged_cards)
 		opponent_hand.add_child(_hand_card(opponent_card, i, false))
 	_rebuild_start_zone(bot_start_zone, match_state.bot, false)
-	_rebuild_pillars(bot_pillars, match_state.bot.pillars, false, match_state.bot.board)
 	_rebuild_board(bot_board, match_state.bot.board, false)
+	_rebuild_pillars(bot_pillars, match_state.bot.pillars, false, match_state.bot.board)
 	_rebuild_board(player_board, match_state.player.board, true)
 	_rebuild_pillars(player_pillars, match_state.player.pillars, true, match_state.player.board)
 	for child in match_hand.get_children(): child.queue_free()
@@ -1196,7 +2288,10 @@ func _rebuild_pillars(container: HBoxContainer, pillars: Array, player_owned: bo
 		if board[slot] == null: continue
 		var structure := database.get_card(board[slot].id, profile.merged_cards)
 		if structure.card_type not in ["Structure", "Item"]: continue
-		container.add_child(_battlefield_card(structure, board[slot], player_owned, slot))
+		var structure_panel := _battlefield_card(structure, board[slot], player_owned, slot)
+		container.add_child(structure_panel)
+		var slot_nodes: Dictionary = player_slot_nodes if player_owned else bot_slot_nodes
+		slot_nodes[slot] = structure_panel.get_meta("portrait", structure_panel)
 	if pillars.is_empty() and not _board_has_back_row_card(board):
 		var empty := Label.new()
 		empty.text = "Pillars / structures"
@@ -1213,6 +2308,8 @@ func _rebuild_board(field: HFlowContainer, board: Array, player_owned: bool) -> 
 	for child in field.get_children(): child.queue_free()
 	var slot_nodes: Dictionary = player_slot_nodes if player_owned else bot_slot_nodes
 	slot_nodes.clear()
+	var owner: Dictionary = match_state.player if player_owned else match_state.bot
+	if int(owner.get("cinder_ward_turns", 0)) > 0: field.add_child(_fire_ward_banner(int(owner.cinder_ward_turns)))
 	for slot in 32:
 		var unit: Variant = board[slot]
 		if unit == null: continue
@@ -1226,6 +2323,24 @@ func _rebuild_board(field: HFlowContainer, board: Array, player_owned: bool) -> 
 		empty.text = "No creatures in play"
 		empty.add_theme_color_override("font_color", MUTED)
 		field.add_child(empty)
+
+func _fire_ward_banner(turns: int) -> Control:
+	var ward := PanelContainer.new()
+	ward.name = "CinderWard"
+	ward.custom_minimum_size = Vector2(360, 34)
+	ward.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ward.add_theme_stylebox_override("panel", _box(Color(0.35, 0.03, 0.01, 0.82), 10, 2, FIRE))
+	var label := Label.new()
+	label.text = "🔥  CINDER WARD  ·  %d opposing combat%s" % [turns, "" if turns == 1 else "s"]
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_color_override("font_color", Color("#ffd08a"))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ward.add_child(label)
+	var tween := ward.create_tween()
+	tween.tween_property(ward, "modulate", Color(1.0, 0.62, 0.42, 1.0), 0.55)
+	tween.tween_property(ward, "modulate", Color.WHITE, 0.55)
+	return ward
 
 func _board_flow() -> HFlowContainer:
 	var field := HFlowContainer.new()
@@ -1241,16 +2356,40 @@ func _battlefield_card(card: Dictionary, unit: Dictionary, player_owned: bool, s
 	stack.add_theme_constant_override("separation", 2)
 	var portrait := _portrait_button(card, unit, false, true)
 	stack.set_meta("portrait", portrait)
-	if not player_owned: portrait.pressed.connect(_enemy_slot_clicked.bind(slot))
+	portrait.pressed.connect(_board_target_clicked.bind("player" if player_owned else "bot", slot))
+	var ability_target: bool = match_state.targeting.get("kind", "") == "ability" and not player_owned
+	if ability_target or _is_effect_targetable("player" if player_owned else "bot", slot): _add_aim_marker(portrait)
 	stack.add_child(portrait)
 	for ability_index in card.abilities.size():
 		var ability := _ability_ref(card.abilities[ability_index])
 		if ability.kind == "activated":
 			var ability_button := _ability_button(ability)
-			ability_button.disabled = not player_owned
+			var already_used := bool(unit.get("abilities_used", {}).get(str(ability_index), false)) and not bool(ability.get("repeatable", false))
+			ability_button.disabled = not player_owned or not match_state.targeting.is_empty() or already_used or int(unit.get("frozen", 0)) > 0
 			ability_button.pressed.connect(_activate_ability.bind(slot, ability_index))
 			stack.add_child(ability_button)
 	return stack
+
+func _add_aim_marker(target: Control) -> void:
+	var marker := Label.new()
+	marker.name = "AimMarker"
+	marker.text = "⌖"
+	marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	marker.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	marker.add_theme_font_size_override("font_size", 38)
+	marker.add_theme_color_override("font_color", Color.WHITE)
+	marker.add_theme_color_override("font_shadow_color", FIRE)
+	marker.add_theme_constant_override("shadow_offset_x", 2)
+	marker.add_theme_constant_override("shadow_offset_y", 2)
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	target.add_child(marker)
+
+func _update_hp_aim(bar: Control) -> void:
+	var old := bar.get_node_or_null("AimMarker")
+	if old: old.queue_free()
+	bar.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND if _is_hp_targetable() else Control.CURSOR_ARROW
+	if _is_hp_targetable(): _add_aim_marker(bar)
 
 func _board_has_back_row_card(board: Array) -> bool:
 	for unit in board:
@@ -1274,10 +2413,19 @@ func _hand_card(card: Dictionary, index: int, player_owned: bool) -> Control:
 	return row
 
 func _is_card_playable(card: Dictionary) -> bool:
-	if bool(match_state.get("busy", false)) or bool(match_state.get("finished", false)): return false
-	if bool(card.get("is_pillar", false)): return true
+	if bool(match_state.get("busy", false)) or bool(match_state.get("finished", false)) or not match_state.get("targeting", {}).is_empty(): return false
+	if bool(card.get("is_pillar", false)): return _can_pay(match_state.player.mana, card.cost)
 	if not _can_pay(match_state.player.mana, card.cost): return false
-	return card.card_type == "Spell" or _first_empty_slot(match_state.player.board) >= 0
+	if card.card_type == "Spell":
+		if str(card.id) in ["ember_offering", "ashen_bargain"]: return _first_creature_slot(match_state.player.board) >= 0
+		if str(card.id) == "berserker_draught": return _first_hp_card_slot(match_state.player.board) >= 0 or _first_hp_card_slot(match_state.bot.board) >= 0
+		return true
+	return _first_empty_slot(match_state.player.board) >= 0
+
+func _bot_can_use_spell(card: Dictionary) -> bool:
+	if str(card.id) in ["ember_offering", "ashen_bargain"]: return _first_creature_slot(match_state.bot.board) >= 0
+	if str(card.id) == "berserker_draught": return _first_hp_card_slot(match_state.bot.board) >= 0
+	return true
 
 func _portrait_button(card: Dictionary, unit: Dictionary = {}, highlighted := false, show_stats := true, edge := 112) -> Button:
 	var button := Button.new()
@@ -1299,7 +2447,12 @@ func _portrait_visual(card: Dictionary, unit: Dictionary = {}, show_stats := tru
 	canvas.custom_minimum_size = Vector2(edge, edge)
 	canvas.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var art := TextureRect.new()
-	art.texture = load(str(card.get("image", "res://assets/elemental_mark.svg")))
+	var image_path := str(card.get("image", "res://assets/elemental_mark.svg"))
+	# Card definitions intentionally point at their final artwork names even while
+	# an art set is being produced. Missing files use the elemental mark quietly.
+	if not ResourceLoader.exists(image_path):
+		image_path = "res://assets/elemental_mark.svg"
+	art.texture = load(image_path)
 	art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -1308,6 +2461,53 @@ func _portrait_visual(card: Dictionary, unit: Dictionary = {}, show_stats := tru
 	art.material = rounded_material
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.add_child(art)
+	if not unit.is_empty() and int(unit.get("frozen", 0)) > 0:
+		var ice := ColorRect.new()
+		ice.name = "FreezeOverlay"
+		ice.color = Color(0.50, 0.88, 1.0, 0.34)
+		ice.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		ice.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		canvas.add_child(ice)
+		var frozen_label := Label.new()
+		frozen_label.text = "❄ %d" % int(unit.frozen)
+		frozen_label.position = Vector2(7, 5)
+		frozen_label.add_theme_font_size_override("font_size", 18)
+		frozen_label.add_theme_color_override("font_color", Color.WHITE)
+		frozen_label.add_theme_color_override("font_shadow_color", Color("#126a93"))
+		frozen_label.add_theme_constant_override("shadow_offset_x", 2)
+		frozen_label.add_theme_constant_override("shadow_offset_y", 2)
+		frozen_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ice.add_child(frozen_label)
+		var ice_tween := ice.create_tween().set_loops()
+		ice_tween.tween_property(ice, "modulate", Color(0.78, 0.94, 1.0, 0.72), 0.75)
+		ice_tween.tween_property(ice, "modulate", Color.WHITE, 0.75)
+	if _has_ability(card, "Shell"):
+		var shell := Label.new()
+		shell.name = "ShellOverlay"
+		shell.text = "⬡"
+		shell.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		shell.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		shell.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		shell.add_theme_font_size_override("font_size", int(edge * 0.72))
+		shell.add_theme_color_override("font_color", Color(0.65, 0.92, 1.0, 0.40))
+		shell.add_theme_color_override("font_outline_color", Color(0.15, 0.55, 0.76, 0.70))
+		shell.add_theme_constant_override("outline_size", 3)
+		shell.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		canvas.add_child(shell)
+	if _has_ability(card, "Provoke"):
+		var provoke := Label.new()
+		provoke.name = "ProvokeIcon"
+		provoke.text = "!"
+		provoke.position = Vector2(edge - 29, 6)
+		provoke.size = Vector2(22, 22)
+		provoke.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		provoke.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		provoke.add_theme_font_size_override("font_size", 20)
+		provoke.add_theme_color_override("font_color", Color("#ffd166"))
+		provoke.add_theme_color_override("font_outline_color", Color("#6d270b"))
+		provoke.add_theme_constant_override("outline_size", 4)
+		provoke.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		canvas.add_child(provoke)
 	if show_stats and int(card.get("max_hp", 0)) > 0:
 		var stat_back := ColorRect.new()
 		stat_back.color = Color(1, 1, 1, 0.76)
@@ -1321,6 +2521,7 @@ func _portrait_visual(card: Dictionary, unit: Dictionary = {}, show_stats := tru
 		stat_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		canvas.add_child(stat_back)
 		var stats := Label.new()
+		stats.name = "Stats"
 		stats.text = "%d / %d" % [int(unit.get("attack", card.attack)), int(unit.get("hp", card.max_hp))]
 		stats.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		stats.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1347,6 +2548,8 @@ func _cost_badge(cost: Dictionary, highlighted := false, compact := false) -> Pa
 func _ability_button(ability: Dictionary) -> Button:
 	var button := Button.new()
 	button.custom_minimum_size.y = 27
+	button.tooltip_text = "%s\n%s" % [_ability_label(ability), _ability_description(ability)]
+	button.mouse_default_cursor_shape = Control.CURSOR_HELP
 	var content := HBoxContainer.new()
 	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 4)
 	content.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1435,8 +2638,14 @@ func _full_card(card: Dictionary, copies: int, compact := false, caption := "", 
 			var ability_row := HBoxContainer.new()
 			if ability.kind == "activated": ability_row.add_child(_cost_content(ability.cost, 14, "0"))
 			var ability_name := Label.new()
-			ability_name.text = _ability_label(ability)
+			ability_name.name = "AbilityText"
+			var is_spell_text := str(card.card_type) == "Spell" or str(ability.kind) == "spell"
+			ability_name.text = _ability_description(ability) if is_spell_text else _ability_label(ability)
 			ability_name.add_theme_color_override("font_color", GOLD)
+			ability_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			ability_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			ability_name.tooltip_text = _ability_description(ability) if is_spell_text else "%s\n%s" % [_ability_label(ability), _ability_description(ability)]
+			ability_name.mouse_default_cursor_shape = Control.CURSOR_ARROW if is_spell_text else Control.CURSOR_HELP
 			ability_row.add_child(ability_name)
 			ability_list.add_child(ability_row)
 	box.add_child(ability_list)
@@ -1543,10 +2752,16 @@ func _card_tooltip(card: Dictionary) -> String:
 	var descriptions: Array[String] = []
 	for reference in card.abilities:
 		var ability := _ability_ref(reference)
-		var description: String = database.abilities.get(ability.id, {}).get("description", "")
-		description = description.replace("{strength}", str(_ability_strength(ability)))
+		var description := _ability_description(ability)
 		descriptions.append("%s%s: %s" % [_symbol_cost(ability.cost, true) + " " if ability.kind == "activated" else "", _ability_label(ability), description])
 	return "%s\n%s\n%s" % [card.display_name, _subtype_line(card), "\n".join(descriptions)]
+
+func _ability_description(ability: Dictionary) -> String:
+	var description := str(database.abilities.get(str(ability.id), {}).get("description", "No rules description available."))
+	description = description.replace("{strength}", str(_ability_strength(ability)))
+	description = description.replace("{duration}", str(int(ability.get("duration", 0))))
+	description = description.replace("{hp_change}", str(int(ability.get("hp_change", 0))))
+	return description
 
 func _ability_strength(ability: Dictionary) -> int:
 	return int(ability.get("strength", 0))
@@ -1557,6 +2772,12 @@ func _card_ability_strength(card: Dictionary, id: String) -> int:
 		if ability.id == id:
 			return _ability_strength(ability)
 	return 0
+
+func _card_ability(card: Dictionary, id: String) -> Dictionary:
+	for reference in card.abilities:
+		var ability := _ability_ref(reference)
+		if ability.id == id: return ability
+	return {"id":id, "cost":{}, "kind":"triggered", "strength":0}
 
 func _ability_label(ability: Dictionary) -> String:
 	var strength := _ability_strength(ability)
@@ -1621,6 +2842,7 @@ func _hp_bar() -> Control:
 	damage.name = "Damage"
 	damage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	damage.show_percentage = false
+	damage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	damage.add_theme_stylebox_override("background", _box(Color("#101820"), 6, 1, Color("#55616a")))
 	damage.add_theme_stylebox_override("fill", _box(Color("#c84949"), 6, 0))
 	root.add_child(damage)
@@ -1674,6 +2896,16 @@ func _incoming_face_damage(attacker: Dictionary, defender: Dictionary) -> int:
 func _first_occupied_slot(board: Array) -> int:
 	for i in board.size():
 		if board[i] != null: return i
+	return -1
+
+func _first_creature_slot(board: Array) -> int:
+	for i in board.size():
+		if board[i] != null and str(database.get_card(board[i].id, profile.merged_cards).card_type) == "Creature": return i
+	return -1
+
+func _first_hp_card_slot(board: Array) -> int:
+	for i in board.size():
+		if board[i] != null and int(database.get_card(board[i].id, profile.merged_cards).max_hp) > 0: return i
 	return -1
 
 func _first_empty_slot(board: Array) -> int:
@@ -1780,7 +3012,9 @@ func _element_color(element: String) -> Color:
 func _screen_color(screen_name: String) -> Color:
 	match screen_name:
 		"Forge", "Fusion": return WATER
-		"Home": return GOLD
+		"Home", "Lobby": return GOLD
+		"Profile": return Color("#a98bd4")
+		"Bazaar": return Color("#d99a45")
 		"Deck": return NATURE
 		"Match": return FIRE
 	return MUTED

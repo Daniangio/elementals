@@ -1,0 +1,41 @@
+ability_values = {
+    "Enter:Spawn Sapling": 1.0,                 # create a 1/1 token when played
+    "1N:Spawn Sapling": 1.0,                 # pay 1N: create a 1/1 token (1N is an example cost can vary)
+    "Nurture 1": 2.5,                     # each turn: give another creature +1/+1
+    "Elf Chorus 1": 2.5,                     # other Elves get +1 ATK
+    "Sprout 1": 2.5,                      # each turn: spawn a 1/1 Sapling
+    "Pack Growth": 2.5,                   # conditional scaling with board size (+1/+1 for each other creature on your board which shares a subtype with this creature)
+    "Grove Blessing": 2.5,                # board-wide +1 HP
+    "Elder Call": 3.0,                    # spawn a 2/2 Elder Sapling on play
+    "Living Grove": 4.0,                   # persistent scaling based on creature count ((+1/+1 for each other creature on your board)
+}
+
+utility_values = {
+    "Enter: Spawn Sapling": 1.5,
+    "1N: Spawn Sapling": 2.5,
+    "Nurture 1": 3.0,
+    "Elf Chorus": 3.0,
+    "Sprout 1": 3.0,
+    "Pack Growth": 3.0,
+    "Grove Blessing": 2.5,
+    "Elder Call": 3.0,
+    "Living Grove": 4.5,
+}
+
+
+id,name,element,card_type,cost,atk,hp,subtype,abilities,role,stat_value,ability_value,target_value,absolute_value,value_error,value_ratio,utility_score,tempo_1,tempo_3,tempo_5
+N001,Seedling,Nature,Nature Creature,0,1,1,Creature,,Simple zero-cost body,1.5,0,1.5,1.5,0.0,1.0,0,1,3,5
+N002,Leaf Elf,Nature,Nature Creature,1,2,2,Elf,,Basic balanced Elf,3.0,0,3.0,3.0,0.0,1.0,0,2,6,10
+N003,Sprout Caller,Nature,Nature Creature,1,1,2,Creature,Enter: Spawn Sapling,Early number-building,2.0,1.5,3.0,3.5,0.5,1.167,1.5,1,3,5
+N004,Young Grovekeeper,Nature,Nature Creature,2,2,4,Creature,Nurture 1,Persistent support,4.0,3.0,5.5,7.0,1.5,1.273,3.0,2,6,10
+N005,Elf Banneret,Nature,Nature Creature,2,2,3,Elf,Elf Chorus,Elf tribal engine,3.5,2.5,5.5,6.0,0.5,1.091,3.0,2,6,10
+N006,Vine Shepherd,Nature,Nature Creature,2,3,3,Creature,Spawn Sapling,Balanced swarm support,4.5,1.5,5.5,6.0,0.5,1.091,1.5,3,9,15
+N007,Verdant Mentor,Nature,Nature Creature,3,3,4,Creature,Nurture 1,Single-target scaling,5.0,3.0,8.0,8.0,0.0,1.0,3.0,3,9,15
+N008,Spore Druid,Nature,Nature Creature,3,2,5,Creature,Sprout 1,Slow token engine,4.5,2.0,8.0,6.5,-1.5,0.812,3.0,2,6,10
+N009,Grove Captain,Nature,Nature Creature,4,4,5,Creature,Elf Chorus,Midgame tribal payoff,6.5,2.5,10.0,9.0,-1.0,0.9,3.0,4,12,20
+N010,Wildheart Beast,Nature,Nature Creature,5,5,6,Beast,Pack Growth,Benefits from wide board,8.0,2.5,12.0,10.5,-1.5,0.875,3.0,5,15,25
+N011,Ancient Gardener,Nature,Nature Creature,6,4,8,Creature,Nurture 1; 1N: Spawn Sapling,Large support engine,8.0,4.5,14.0,12.5,-1.5,0.893,4.5,4,12,20
+N012,Elder Grovecaller,Nature,Nature Creature,7,5,8,Creature,Sprout 1; Elf Chorus,Late swarm engine,9.0,4.5,16.0,13.5,-2.5,0.844,6.0,5,15,25
+N013,Worldroot Treant,Nature,Nature Creature,8,8,9,Treant,Grove Blessing; Pack Growth,Board-wide scaling bomb,12.5,5.0,18.0,17.5,-0.5,0.972,5.5,8,24,40
+N014,Ancient Forest Spirit,Nature,Nature Creature,9,7,10,Spirit,Elder Call; Living Grove,Late-game swarm finisher,12.0,7.0,20.0,19.0,-1.0,0.95,7.5,7,21,35
+N015,Avatar of the Grove,Nature,Nature Creature,10,8,11,Spirit,Living Grove; Nurture 1,Ultimate wide-board bomb,13.5,7.0,22.0,20.5,-1.5,0.932,7.5,8,24,40

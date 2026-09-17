@@ -1,0 +1,16 @@
+id,name,element,card_type,cost,atk,hp,abilities,role,stat_value,ability_value,target_value,absolute_value,value_error,value_ratio,utility_score,tempo_1,tempo_3,tempo_5
+W001,Tide Tadpole,Water,Creature,0,1,1,,Free early presence,1.5,0,1.5,1.5,0.0,1.0,0,1,3,5
+W002,Mistling,Water,Creature,1,1,4,,One-drop defensive anchor,3.0,0,3.0,3.0,0.0,1.0,0,1,3,5
+W003,Cold Current,Water,Creature,1,1,1,Freeze 1,Early tempo control,1.5,2.0,3.0,3.5,0.5,1.167,2.5,1,3,5
+W004,Reef Guard,Water,Creature,1,1,2,Provoke 1,Defensive one-drop,2.0,1.5,3.0,3.5,0.5,1.167,2.0,1,3,5
+W005,Wave Adept,Water,Creature,2,2,3,Freeze 1,Early control creature,3.5,2.0,5.5,5.5,0.0,1.0,2.5,2,6,10
+W006,Undertow Serpent,Water,Creature,2,2,2,Bounce 1,Tempo-oriented removal,3.0,3.0,5.5,6.0,0.5,1.091,3.5,2,6,10
+W007,Shellback,Water,Creature,2,2,3,Shell 2,Durable stabilizer,3.5,2.0,5.5,5.5,0.0,1.0,2.0,2,6,10
+W008,Frost Drake,Water,Creature,3,3,5,Freeze 1,Three-mana control threat,5.5,2.0,8.0,7.5,-0.5,0.938,2.5,3,9,15
+W009,Tidal Warden,Water,Creature,3,2,8,Provoke 1,Board protection,6.0,1.5,8.0,7.5,-0.5,0.938,2.0,2,6,10
+W010,Abyssal Hook,Water,Creature,4,3,8,Bounce 1,Midgame tempo engine,7.0,3.0,10.0,10.0,0.0,1.0,3.5,3,9,15
+W011,Glacial Guardian,Water,Creature,5,3,10,Freeze 1; Shell 2,Late stabilizer,8.0,4.0,12.0,12.0,0.0,1.0,4.5,3,9,15
+W012,Deepwater Spirit,Water,Creature,6,4,9,Bounce 1; Freeze 1,Flexible late-game control,8.5,5.0,14.0,13.5,-0.5,0.964,6.0,4,12,20
+W013,Leviathan Whelp,Water,Creature,7,6,12,Shell 2; Provoke 1,Large defensive finisher,12.0,3.5,16.0,15.5,-0.5,0.969,4.0,6,18,30
+W014,Ancient Sea Drake,Water,Creature,9,8,14,Freeze 2,Late-game control bomb,15.0,3.25,20.0,18.25,-1.75,0.912,4.0,8,24,40
+W015,Abyssal Leviathan,Water,Creature,10,9,16,Bounce 2,Ultimate late-game finisher,17.0,4.25,22.0,21.25,-0.75,0.966,5.0,9,27,45

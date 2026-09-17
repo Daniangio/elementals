@@ -1,7 +1,7 @@
 id,name,element,card_type,subtypes,cost,atk,hp,ability,ability_kind,ability_cost,ability_strength,role,stat_value,ability_value,target_value,absolute_value,value_error,value_ratio,utility_score,tempo_1,tempo_3,tempo_5
 F001,Ember Spark,Fire,Creature,Elemental,0,1,1,,,,Free pressure anchor,1.5,0.0,1.5,1.5,0.0,1.0,0,1,3,5
 F002,Ember Pup,Fire,Creature,Hound,1,2,2,,,,One-drop vanilla anchor,3.0,0.0,3.0,3.0,0.0,1.0,0,2,6,10
-F003,Ash Wisp,Fire,Creature,Spirit,1,1,1,Scorch,on_play,,2,Immediate face pressure,1.5,1.5,3.0,3.0,0.0,1.0,1,3,5,7
+F003,Ash Wisp,Fire,Creature,Spirit,1,1,1,Scorch,on_play,,2,Flexible ping pressure,1.5,1.5,3.0,3.0,0.0,1.0,1,3,5,7
 F004,Flame Initiate,Fire,Creature,Human|Mage,1,1,1,Fury,triggered,,1,Scaling one-drop,1.5,1.5,3.0,3.0,0.0,1.0,2,1,6,15
 F005,Cinder Hound,Fire,Creature,Hound,2,3,3,Strike,activated,1F,,Early creature removal utility,4.5,1.0,5.5,5.5,0.0,1.0,2,3,9,15
 F006,Scorchling,Fire,Creature,Elemental,2,3,2,Scorch,on_play,,2,Burst-focused two-drop,4.0,1.5,5.5,5.5,0.0,1.0,1,5,11,17
@@ -14,3 +14,9 @@ F012,Magma Reaver,Fire,Creature,Elemental|Warrior,6,10,5,Burn,triggered,,1,Persi
 F013,Hellforged Ram,Fire,Creature,Beast|Construct,7,12,4,Scorch,on_play,,3,Expensive burst bomb,14.0,2.25,16.0,16.25,0.25,1.016,1,15,39,63
 F014,Ash Phoenix,Fire,Creature,Bird|Spirit,9,15,7,Last Spark,triggered,,3,Late-game death-value bomb,18.5,1.5,20.0,20.0,0.0,1.0,1,15,45,75
 F015,Inferno Tyrant,Fire,Creature,Dragon,10,18,8,,,,Pure late-game stat bomb,22.0,0.0,22.0,22.0,0.0,1.0,0,18,54,90
+FS001,Fireball,Fire,Spell,,3,0,0,Fireball,spell,,6,Flexible direct damage,0.0,6.0,6.0,6.0,0.0,1.0,3,6,6,6
+FS002,Fire Rain,Fire,Spell,,4,0,0,Fire Rain,spell,,2,Enemy board-wide damage,0.0,6.0,6.0,6.0,0.0,1.0,4,4,8,12
+FS003,Ember Offering,Fire,Spell,,1,0,0,Ember Offering,spell,,8,Sacrifice-to-mana engine,0.0,4.0,4.0,4.0,0.0,1.0,4,6,8,10
+FS004,Cinder Ward,Fire,Spell,,4,0,0,Cinder Ward,spell,,2,Three-combat retaliation defense,0.0,6.0,6.0,6.0,0.0,1.0,2,6,10,14
+FS005,Ashen Bargain,Fire,Spell,,1,0,0,Ashen Bargain,spell,,2,Sacrifice-to-cards engine,0.0,4.0,4.0,4.0,0.0,1.0,2,6,8,10
+FS006,Berserker Draught,Fire,Spell,,3,0,0,Berserker Draught,spell,,5,Flexible attack buff with HP loss,0.0,5.0,5.0,5.0,0.0,1.0,3,5,10,15

@@ -101,7 +101,7 @@ These values are not permanent. They are starting priors for balancing and shoul
 
 ## 4.1 Scorch X
 
-**Rule:** When played, deal `X` damage directly to the opponent.
+**Rule:** When played, deal `X` damage to any selected player or card with HP. Friendly cards and the controller are legal targets.
 
 Initial value estimate:
 
@@ -115,7 +115,7 @@ Therefore:
 | Scorch 2 | 1.50 |
 | Scorch 3 | 2.25 |
 
-The value is deliberately sublinear only weakly at low magnitude because direct damage is especially valuable when available immediately.
+The value is deliberately sublinear only weakly at low magnitude because immediate damage is flexible: it can advance the player race, remove a low-HP engine, or enable a self-damage interaction. These priors should be retested now that Scorch is not face-only.
 
 ## 4.2 Fury X
 
@@ -140,13 +140,13 @@ Fury is intentionally expensive because it creates compounding tempo. A card tha
 
 Initial value estimate:
 
-`AbilityValue(Burn X) = 1.25 + 0.75 * (X - 1)`
+`AbilityValue(Burn X) = 1.00 * X`
 
 Therefore:
 
 | Ability | Initial value |
 |---|---:|
-| Burn 1 | 1.25 |
+| Burn 1 | 1.00 |
 | Burn 2 | 2.00 |
 
 Burn is highly tempo-sensitive. Its absolute-value number should therefore be considered a conservative printed-value estimate, while its tempo profile must always be inspected separately.
@@ -238,9 +238,9 @@ Example: a 4 ATK vanilla creature produces:
 
 ## 6.2 Scorch X
 
-`TempoDamage(N) = ATK * N + X`
+When Scorch targets the opponent, `TempoDamage(N) = ATK * N + X`.
 
-The extra damage happens once, when the creature is played.
+The extra damage happens once, when the creature is played. When it targets a card instead, track the prevented opposing damage or engine value rather than adding `X` to face-damage tempo.
 
 ## 6.3 Fury X
 
@@ -406,7 +406,7 @@ For example:
 
 - Burn becomes much stronger when a card can attack more frequently.
 - Fury becomes stronger when a card has protection or high HP.
-- Scorch becomes stronger in an all-in aggro deck because immediate opponent damage compresses the race.
+- Scorch becomes stronger when either immediate opponent damage compresses the race or a low-HP opposing engine can be removed efficiently.
 - Strike becomes stronger when opponents tend to play high-value creatures.
 
 Therefore the first implementation should support both:
@@ -486,6 +486,8 @@ The worksheet records subtype, ability kind, per-card activation cost, and optio
 Cards can have multiple subtypes. A **Confluence** merge adds the unique subtypes of both sources. An **Imprint** merge keeps the subtype set of exactly one selected source. These are parallel creative expressions: Imprint's focused identity is not treated as an inferior or incomplete merge.
 
 Same-element cards may use Confluence but do not generate Imprint options. A card's merge depth is capped at two; balance reviews should therefore consider both first-generation and second-generation merged cards, but no deeper recursive combinations.
+
+Pillar fusion uses a separate Attunement rule. Each compatible base pair creates the same hybrid output element, but the player chooses one of the two source elements as its Attunement. A decked attuned hybrid Pillar costs one mana of that source element and then produces hybrid mana on later turns. Balance reviews should treat this one-mana setup cost as the price of starting with hybrid access rather than forming it from two zero-cost base Pillars during play.
 
 The set deliberately includes several vanilla creatures so that the curve itself can be inspected independently from the ability system.
 
