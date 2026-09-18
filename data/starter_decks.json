@@ -12,7 +12,7 @@
 	  "description": "Defensive Water creatures with Freeze and steady value.",
 	  "foundation_id": "pillar_water",
 	  "vanguard_id": "tide_tadpole",
-	  "card_ids": ["pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","tide_tadpole","tide_tadpole","mistling","mistling","reef_guard","reef_guard","reef_guard","wave_adept","wave_adept","water_sprite","water_sprite","water_sprite","healing_rain","healing_rain","sea_egg","sea_egg","deep_freeze","deep_freeze"]
+	  "card_ids": ["pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","tide_tadpole","tide_tadpole","mistling","mistling","reef_guard","reef_guard","reef_guard","wave_adept","wave_adept","cold_current","cold_current","cold_current","healing_rain","healing_rain","sea_egg","sea_egg","deep_freeze","deep_freeze"]
 	},
 	"verdant_pact": {
 	  "name": "Verdant Pact",

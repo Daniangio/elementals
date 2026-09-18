@@ -1,5 +1,7 @@
 {
   "starting_profile": {"level": 1, "xp": 0, "currency": 1000},
+  "debug": {"enabled": true, "owned_card_bonus": 100},
+  "lan": {"game_port": 8910, "discovery_port": 8911, "broadcast_interval_seconds": 0.75, "room_timeout_seconds": 2.5},
   "deck_rules": {"minimum_cards": 30, "maximum_cards": 120, "maximum_copies_per_name": 6},
   "starter_decks_path": "res://data/starter_decks.json",
   "bot_decks_path": "res://data/bot_decks.json",
@@ -12,7 +14,7 @@
       "price": 100,
       "size": 8,
       "image": "res://assets/pillars/steam.png",
-      "pool": ["ember_spark", "ember_pup", "ash_wisp", "flame_initiate", "cinder_hound", "scorchling", "fury_brute", "fire_charger", "pyroclast", "blazehorn", "inferno_beast", "magma_reaver", "hellforged_ram", "ash_phoenix", "inferno_tyrant", "fireball", "coalbrand_imp", "pyre_stalker", "searing_brand", "ember_infusion", "water_sprite", "water_mage", "healing_rain", "sea_egg", "sea_drake", "clear_the_tide", "sea_nursery", "deep_freeze", "mass_incubation", "blizzard", "vineling", "ancient_tree", "regrowth", "first_sprout", "grove_muster", "protective_canopy", "nurturing_touch", "thorn_volley", "spore_cloud", "elf_chorus_spell", "verdant_surge", "canopy_of_ages", "forest_armada", "wildheart_strike", "worldroot_ascension"]
+      "pool": ["ember_spark", "ember_pup", "ash_wisp", "flame_initiate", "cinder_hound", "scorchling", "fury_brute", "fire_charger", "pyroclast", "blazehorn", "inferno_beast", "magma_reaver", "hellforged_ram", "ash_phoenix", "inferno_tyrant", "fireball", "coalbrand_imp", "pyre_stalker", "searing_brand", "ember_infusion", "cold_current", "wave_adept", "healing_rain", "sea_egg", "sea_drake", "clear_the_tide", "sea_nursery", "deep_freeze", "mass_incubation", "blizzard", "vineling", "ancient_tree", "regrowth", "first_sprout", "grove_muster", "protective_canopy", "nurturing_touch", "thorn_volley", "spore_cloud", "elf_chorus_spell", "verdant_surge", "canopy_of_ages", "forest_armada", "wildheart_strike", "worldroot_ascension"]
     }
   },
   "single_cards": {

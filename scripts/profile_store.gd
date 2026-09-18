@@ -6,16 +6,25 @@ const ACCOUNTS_PATH := "user://accounts.json"
 const BOOTSTRAP_PATH := "res://data/bootstrap_profile.json"
 const CONFIG_PATH := "res://data/game_config.json"
 const STARTER_DECKS_PATH := "res://data/starter_decks.json"
+const CARDS_PATH := "res://data/cards.json"
 var profile: Dictionary = {}
 var accounts: Dictionary = {}
 var active_profile_id := ""
 var config: Dictionary = {}
 var starter_decks: Dictionary = {}
+var debug_consumed: Dictionary = {}
+var debug_collectible_ids: Dictionary = {}
 
 func load_profile() -> Dictionary:
+	debug_consumed.clear()
 	var bootstrap := _read_json(BOOTSTRAP_PATH)
 	config = _read_json(CONFIG_PATH)
 	starter_decks = _read_json(STARTER_DECKS_PATH).get("decks", {})
+	debug_collectible_ids.clear()
+	var card_definitions: Variant = _read_json_value(CARDS_PATH)
+	if card_definitions is Array:
+		for card in card_definitions:
+			if card is Dictionary and bool(card.get("collectible", false)): debug_collectible_ids[str(card.get("id", ""))] = true
 	if FileAccess.file_exists(ACCOUNTS_PATH):
 		accounts = _read_json(ACCOUNTS_PATH)
 		active_profile_id = str(accounts.get("active_profile_id", ""))
@@ -57,6 +66,7 @@ func all_profiles() -> Dictionary:
 	return accounts.get("profiles", {})
 
 func create_profile(player_name: String) -> Dictionary:
+	debug_consumed.clear()
 	var bootstrap := _read_json(BOOTSTRAP_PATH).duplicate(true)
 	active_profile_id = "profile_" + str(Time.get_unix_time_from_system()) + "_" + str(randi_range(100, 999))
 	profile = bootstrap
@@ -98,6 +108,7 @@ func switch_profile(id: String) -> Dictionary:
 	active_profile_id = id
 	accounts.active_profile_id = id
 	profile = accounts.profiles[id]
+	debug_consumed.clear()
 	save_profile()
 	return profile
 
@@ -124,7 +135,10 @@ func save_profile() -> bool:
 	return true
 
 func owned(id: String) -> int:
-	return int(profile.get("collection", {}).get(id, 0))
+	var debug_config: Dictionary = config.get("debug", {})
+	var debug_applies: bool = debug_collectible_ids.has(id) or profile.get("merged_cards", {}).has(id)
+	var bonus := int(debug_config.get("owned_card_bonus", 100)) if bool(debug_config.get("enabled", false)) and debug_applies else 0
+	return int(profile.get("collection", {}).get(id, 0)) + bonus - int(debug_consumed.get(id, 0))
 
 func can_consume(ids: Array[String]) -> bool:
 	var needed: Dictionary = {}
@@ -145,6 +159,17 @@ func consume_and_add(source_ids: Array[String], merged: Dictionary) -> bool:
 	profile = previous
 	return false
 
+func consume_and_add_existing(source_ids: Array[String], result_id: String) -> bool:
+	if not can_consume(source_ids):
+		return false
+	var previous := profile.duplicate(true)
+	_consume_sources(source_ids)
+	profile.collection[result_id] = int(profile.collection.get(result_id, 0)) + 1
+	if save_profile():
+		return true
+	profile = previous
+	return false
+
 func apply_fusion_to_collection(source_ids: Array[String], merged: Dictionary) -> bool:
 	if not can_consume(source_ids):
 		return false
@@ -152,10 +177,15 @@ func apply_fusion_to_collection(source_ids: Array[String], merged: Dictionary) -
 	return true
 
 func _apply_fusion_to_collection(source_ids: Array[String], merged: Dictionary) -> void:
-	for id in source_ids:
-		profile.collection[id] = owned(id) - 1
+	_consume_sources(source_ids)
 	profile.merged_cards[merged.id] = merged
 	profile.collection[merged.id] = int(profile.collection.get(merged.id, 0)) + 1
+
+func _consume_sources(source_ids: Array[String]) -> void:
+	for id in source_ids:
+		var stored := int(profile.collection.get(id, 0))
+		if stored > 0: profile.collection[id] = stored - 1
+		elif bool(config.get("debug", {}).get("enabled", false)): debug_consumed[id] = int(debug_consumed.get(id, 0)) + 1
 
 func export_debug() -> String:
 	var path := "user://elementals_debug_profile.json"
@@ -165,8 +195,12 @@ func export_debug() -> String:
 	return ProjectSettings.globalize_path(path)
 
 func _read_json(path: String) -> Dictionary:
+	var parsed: Variant = _read_json_value(path)
+	return parsed if parsed is Dictionary else {}
+
+func _read_json_value(path: String) -> Variant:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
 		return {}
 	var parsed: Variant = JSON.parse_string(file.get_as_text())
-	return parsed if parsed is Dictionary else {}
+	return parsed if parsed != null else {}

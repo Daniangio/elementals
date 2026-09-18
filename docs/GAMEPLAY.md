@@ -8,9 +8,13 @@ On a fresh installation, the player chooses a name and then one starter from `da
 
 The Combat Hall lists challenges from `data/challenges.json`. Entering immediately pays the configured crown cost, then randomly selects one of the challenge's deck IDs from `data/bot_decks.json`. Bot behavior is shared across difficulties; only its deck changes. Winning grants that challenge's crown prize and XP, while a loss grants its participation XP. Finished and surrendered matches return to the Lobby; an entry fee is not refunded by surrender.
 
+The same room contains Local Network PVP. A player with a valid active deck can advertise a named room on the LAN. Other players on the same network see the room automatically, join it, and wait for the creator to start; a direct IPv4 field is available when network broadcast discovery is filtered. A room accepts one opponent. Each installation always renders its local player on the bottom and its opponent on the top. LAN matches do not charge a challenge entry fee or grant challenge rewards.
+
 ## Collection and Decks
 
 A player owns a quantity of each collectible card. New profiles begin empty and receive only the selected starter grant. `data/bootstrap_profile.json` now contains the empty account schema rather than a debug collection. The old unattuned hybrid definitions remain non-collectible compatibility records.
+
+When `debug.enabled` is enabled in `data/game_config.json`, every collectible base or merged card receives the configured virtual ownership bonus (100 by default). The bonus is available to Collection, deckbuilding, and Forge rules, but is not persisted into the profile; normal play is unchanged when the flag is disabled.
 
 A main deck contains at least 30 and at most 120 cards. A player cannot add more copies of a card than they own. Cards are copy-limited by displayed name rather than internal ID: at most six main-deck cards may share a name. Every Pillar ignores the six-copy name limit but remains limited by owned copies. Base Fire, Water, and Nature Pillars cost zero. Attuned Steam, Wildfire, and Swamp Pillars may be included in decks and cost one mana of that attuned base element to play.
 
@@ -33,18 +37,20 @@ Purchased packs are inventory items rather than immediately opened cards. Collec
 
 ## Forge
 
-The Forge displays the player's collection as a horizontal strip across the bottom half of the room. Selecting a card places its full card into one of the two centered source slots. Name and artwork selection sits below those slots; Confluence results occupy the left panel and the horizontally scrollable Imprint choices occupy the right. Only cards with at least one uncommitted owned copy can be selected.
+The Forge displays the player's collection across the bottom half using the same portrait, ownership-count, and element-filter panel as the Deckbuilder. Selecting a card places its full card into one of the two centered source slots. Name and artwork selection sits below those slots; Confluence results occupy the left panel and Imprint choices occupy a vertically scrolling two-column grid on the right. Candidate previews contain only the resolved card rather than internal fidelity or ability-budget calculations. Only cards with at least one uncommitted owned copy can be selected.
 
 When two compatible source cards are selected, the player first chooses one of the two combined names. The selected name also selects the artwork of the card that contributes its first name part. The Forge then divides all legal full-card results into two equally valid expressions:
 
 - **Confluence** adds both cards' stats, abilities, costs, and unique subtypes.
-- **Imprint** converts paired elemental costs into hybrid mana. Its fidelity is based on the converted share: each stat becomes the larger source stat plus stat alpha times the smaller, while abilities use a separate, more generous ability alpha so hybrids retain meaningful effects. Legal scaled packages must remain beneath that ability budget. It keeps either source's subtype set.
+- **Imprint** converts paired elemental costs into hybrid mana. Its fidelity is based on the converted share: each stat becomes the larger source stat plus stat alpha times the smaller, while abilities use a separate, more generous ability alpha so hybrids retain meaningful effects. When both parents have abilities, the effective budget always permits their minimum legal forms together, and the Forge lists packages from either parent and mixed combinations. An ability-free wildtype spends its unused ability allowance on additional ATK and HP instead. It keeps either source's subtype set.
 
 Ability descriptions, power evaluations, and legal integer strength ranges are explicit in data/abilities.json. Fidelity tiers and special recipes live in data/fusion_rules.json. The Forge lists all deterministic legal packages, preferring results that preserve both source identities; it never silently selects one for the player. Full formulas and persistence rules are documented in docs/FUSION_RULES.md.
 
 Selecting one result reveals the Merge button between the source slots. Pressing it commits the collection transaction immediately, then opens a modal animation in which the two sources collapse into particles and reveal the resulting card. The result is already safely owned while the player views and closes this presentation. Imprint is an alternative expression, not a lesser merge.
 
 Cards of different compatible elements offer Confluence and every legal Imprint. Two cards of the same element may also merge, but only as a Confluence. A resulting card may be merged again once, for a maximum merge depth of two. One or two gold merge marks at the lower-right of every full card show its merge depth; a card with two marks cannot be selected as a Forge source.
+
+Base Pillars also appear in the Forge collection. Combining two different base elements offers the two existing Attuned hybrid Pillars—for example, Fire-Attuned Steam and Water-Attuned Steam. After a successful merge, each source remains armed in its merge slot if another owned copy is available, and the previously selected result remains selected while both sources remain, allowing repeated merges without rebuilding the choice.
 
 Confirming a merge performs one atomic collection update:
 

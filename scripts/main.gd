@@ -19,6 +19,12 @@ var bot_decks: Dictionary = {}
 var challenges: Dictionary = {}
 var pending_challenge_id := ""
 var bazaar_tab := 0
+var lan: LanMultiplayer
+var lan_match_active := false
+var lan_local_turn := false
+var lan_sequence := 0
+var lan_imported_cards: Dictionary = {}
+var lan_screen_refresh_pending := false
 var content: MarginContainer
 var toast: Label
 var brand_logo: TextureRect
@@ -42,6 +48,7 @@ var deck_cards_container: HFlowContainer
 var deck_collection_container: HFlowContainer
 var deck_element_filter := "All"
 var collection_element_filter := "All"
+var forge_element_filter := "All"
 var deck_foundation := "pillar_fire"
 var deck_vanguard := "ember_pup"
 var deck_special_target := ""
@@ -82,6 +89,17 @@ func _ready() -> void:
 	game_config = store.config
 	bot_decks = _read_json_dictionary(str(game_config.get("bot_decks_path", "res://data/bot_decks.json"))).get("decks", {})
 	challenges = _read_json_dictionary(str(game_config.get("challenges_path", "res://data/challenges.json"))).get("challenges", {})
+	lan = LanMultiplayer.new()
+	lan.name = "LanMultiplayer"
+	add_child(lan, true)
+	lan.configure(game_config.get("lan", {}))
+	lan.rooms_changed.connect(_on_lan_rooms_changed)
+	lan.status_changed.connect(_on_lan_status_changed)
+	lan.match_started.connect(_begin_lan_match)
+	lan.action_received.connect(_receive_lan_action)
+	lan.turn_state_received.connect(_receive_lan_turn_state)
+	lan.match_finished.connect(_receive_lan_match_finished)
+	lan.connection_lost.connect(_on_lan_connection_lost)
 	_build_shell()
 	var requested := OS.get_environment("ELEMENTALS_SCREEN")
 	_show_screen(requested if requested in ["Home", "Lobby", "Profile", "Collection", "Forge", "Fusion", "Deck", "DeckEditor", "Bazaar", "Combat", "Match"] else "Lobby")
@@ -172,6 +190,8 @@ func _show_screen(screen_name: String) -> void:
 	if screen_name != "Match":
 		var attune_overlay := get_node_or_null("AttuneOverlay")
 		if attune_overlay: attune_overlay.queue_free()
+		var result_overlay := get_node_or_null("LanResultOverlay")
+		if result_overlay: result_overlay.queue_free()
 	_apply_room_background(screen_name)
 	_hide_card_hover()
 	for child in content.get_children():
@@ -359,7 +379,8 @@ func _read_json_dictionary(path: String) -> Dictionary:
 
 func _collection_total() -> int:
 	var total := 0
-	for amount in profile.get("collection", {}).values(): total += int(amount)
+	for card in database.all_cards(profile.get("merged_cards", {})):
+		if bool(card.get("collectible", false)): total += store.owned(str(card.id))
 	return total
 
 func _build_bazaar() -> Control:
@@ -386,7 +407,7 @@ func _build_bazaar() -> Control:
 		offer.custom_minimum_size.x = 210
 		offer.add_child(_full_card(card, -1))
 		var owned := Label.new()
-		owned.text = "Owned: %d" % int(profile.get("collection", {}).get(card_id, 0))
+		owned.text = "Owned: %d" % store.owned(str(card_id))
 		owned.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		owned.add_theme_color_override("font_color", MUTED)
 		offer.add_child(owned)
@@ -673,36 +694,71 @@ func _build_fusion() -> Control:
 	imprint_box.add_child(_small_heading("IMPRINT"))
 	var result_scroll := ScrollContainer.new()
 	result_scroll.name = "ResultScroll"
-	result_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	result_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	result_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	result_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	result_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var imprint := HBoxContainer.new()
+	var imprint := GridContainer.new()
 	imprint.name = "Imprint"
+	imprint.columns = 2
+	imprint.add_theme_constant_override("h_separation", 10)
+	imprint.add_theme_constant_override("v_separation", 10)
 	result_scroll.add_child(imprint)
 	imprint_box.add_child(result_scroll)
 	var imprint_panel := _panel(imprint_box)
 	imprint_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(imprint_panel)
 	work.add_child(top)
+	var collection_section := HBoxContainer.new()
+	collection_section.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	collection_section.add_theme_constant_override("separation", 10)
+	var filters := VBoxContainer.new()
+	filters.custom_minimum_size.x = 118
+	filters.add_child(_small_heading("ELEMENT"))
+	var filter_group := ButtonGroup.new()
+	filter_group.allow_unpress = false
+	for element in _available_card_elements():
+		var filter_button := Button.new()
+		filter_button.text = element
+		filter_button.toggle_mode = true
+		filter_button.button_group = filter_group
+		filter_button.button_pressed = element == forge_element_filter
+		filter_button.pressed.connect(_set_forge_filter.bind(element))
+		filters.add_child(filter_button)
+	var filters_panel := _panel(filters)
+	filters_panel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	collection_section.add_child(filters_panel)
 	var collection_box := VBoxContainer.new()
 	collection_box.add_child(_small_heading("COLLECTION — CLICK TO FILL THE MERGE SLOTS"))
 	var collection_scroll := ScrollContainer.new()
 	collection_scroll.name = "ForgeCollectionScroll"
-	collection_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	collection_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	collection_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	collection_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	collection_scroll.custom_minimum_size.y = 300
-	var collection_row := HBoxContainer.new()
+	collection_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var collection_row := HFlowContainer.new()
+	collection_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	collection_row.add_theme_constant_override("h_separation", 14)
+	collection_row.add_theme_constant_override("v_separation", 8)
 	for card in database.all_cards(profile.merged_cards):
-		if store.owned(card.id) > 0 and str(card.card_type) == "Creature":
-			var item := _owned_full_card(card, true)
-			item.gui_input.connect(_fusion_collection_input.bind(card.id))
-			collection_row.add_child(item)
+		if store.owned(card.id) <= 0 or not _forge_card_mergeable(card): continue
+		if forge_element_filter != "All" and forge_element_filter not in card.get("element_tags", []): continue
+		collection_row.add_child(_card_copy_entry(card, store.owned(card.id), "Owned", _select_fusion_source))
 	collection_scroll.add_child(collection_row)
 	collection_box.add_child(collection_scroll)
-	work.add_child(_panel(collection_box))
+	var collection_panel := _panel(collection_box)
+	collection_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	collection_section.add_child(collection_panel)
+	work.add_child(collection_section)
 	root.add_child(work)
 	_rebuild_fusion_work(work)
 	return root
+
+func _set_forge_filter(element: String) -> void:
+	forge_element_filter = element
+	_show_screen("Forge")
+
+func _forge_card_mergeable(card: Dictionary) -> bool:
+	return (str(card.get("card_type", "")) == "Creature" and fusion_engine.merge_count(card) < 2) or (bool(card.get("is_pillar", false)) and bool(card.get("is_base", false)))
 
 func _fusion_collection_input(event: InputEvent, card_id: String) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -712,8 +768,8 @@ func _fusion_collection_input(event: InputEvent, card_id: String) -> void:
 
 func _select_fusion_source(card_id: String) -> void:
 	var selected_card := database.get_card(card_id, profile.merged_cards)
-	if str(selected_card.get("card_type", "")) != "Creature":
-		_notify("Only creatures can enter the Forge.")
+	if not _forge_card_mergeable(selected_card):
+		_notify("Only creatures below the merge limit and base Pillars can enter the Forge.")
 		return
 	if fusion_engine.merge_count(selected_card) >= 2:
 		_notify("%s has already reached its two-merge limit." % selected_card.display_name)
@@ -721,6 +777,11 @@ func _select_fusion_source(card_id: String) -> void:
 	if store.owned(card_id) <= fusion_sources.count(card_id):
 		_notify("No additional owned copy is available.")
 		return
+	if not fusion_sources.is_empty():
+		var first_source := database.get_card(fusion_sources[0], profile.merged_cards)
+		if bool(first_source.get("is_pillar", false)) != bool(selected_card.get("is_pillar", false)):
+			_notify("Pillars merge with base Pillars; creatures merge with creatures.")
+			return
 	if fusion_sources.size() < 2:
 		fusion_sources.append(card_id)
 	else:
@@ -762,21 +823,24 @@ func _rebuild_fusion_work(work: VBoxContainer) -> void:
 	var picker: OptionButton = work.find_child("NamePicker", true, false)
 	picker.clear()
 	var confluence: HBoxContainer = work.find_child("Confluence", true, false)
-	var imprint: HBoxContainer = work.find_child("Imprint", true, false)
+	var imprint: GridContainer = work.find_child("Imprint", true, false)
 	for child in confluence.get_children(): child.queue_free()
 	for child in imprint.get_children(): child.queue_free()
 	fusion_candidates.clear()
 	if fusion_sources.size() == 2:
 		var a := database.get_card(fusion_sources[0], profile.merged_cards)
 		var b := database.get_card(fusion_sources[1], profile.merged_cards)
+		var pillar_pair := bool(a.get("is_pillar", false)) and bool(b.get("is_pillar", false))
 		var names := fusion_engine.name_candidates(a, b)
-		for candidate_name in names: picker.add_item(candidate_name + " — " + (str(a.display_name) if candidate_name.begins_with(str(a.name_parts[0])) else str(b.display_name)) + " artwork")
-		picker.select(clampi(fusion_name_index, 0, names.size() - 1))
+		picker.visible = not pillar_pair
+		if not pillar_pair:
+			for candidate_name in names: picker.add_item(candidate_name + " — " + (str(a.display_name) if candidate_name.begins_with(str(a.name_parts[0])) else str(b.display_name)) + " artwork")
+			picker.select(clampi(fusion_name_index, 0, names.size() - 1))
 		var result_element := fusion_engine.result_element(a.element_tags[0], b.element_tags[0])
 		if not result_element.is_empty() and fusion_engine.merge_count(a) < 2 and fusion_engine.merge_count(b) < 2:
-			fusion_candidates = fusion_engine.result_candidates(a, b, names[picker.selected])
+			fusion_candidates = _forge_pillar_candidates(a, b) if pillar_pair else fusion_engine.result_candidates(a, b, names[picker.selected])
 			for i in fusion_candidates.size():
-				var card_panel := _full_card(fusion_candidates[i], 0, false, fusion_candidates[i].candidate_label)
+				var card_panel := _full_card(fusion_candidates[i], 0)
 				card_panel.add_theme_stylebox_override("panel", _box(GOLD.darkened(0.72) if i == fusion_selected else _element_color(result_element).darkened(0.62), 6, 2, GOLD if i == fusion_selected else _element_color(result_element)))
 				_set_mouse_pass(card_panel)
 				card_panel.gui_input.connect(_fusion_candidate_input.bind(i))
@@ -790,6 +854,19 @@ func _rebuild_fusion_work(work: VBoxContainer) -> void:
 	if is_instance_valid(confirm):
 		confirm.visible = fusion_selected >= 0 and fusion_selected < fusion_candidates.size()
 
+func _forge_pillar_candidates(a: Dictionary, b: Dictionary) -> Array[Dictionary]:
+	var hybrid := fusion_engine.fusion_element(str(a.element_tags[0]), str(b.element_tags[0]))
+	if hybrid.is_empty(): return []
+	var candidates: Array[Dictionary] = []
+	for element in [str(a.element_tags[0]), str(b.element_tags[0])]:
+		var id := _attuned_pillar_id(hybrid, element)
+		var candidate := database.get_card(id, profile.merged_cards).duplicate(true)
+		if candidate.is_empty(): continue
+		candidate["fusion_mode"] = "attunement"
+		candidate["existing_card_id"] = id
+		candidates.append(candidate)
+	return candidates
+
 func _fusion_candidate_input(event: InputEvent, index: int) -> void:
 	if (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) or (event is InputEventScreenTouch and event.pressed):
 		fusion_selected = index
@@ -800,15 +877,25 @@ func _confirm_fusion() -> void:
 		return
 	var a := database.get_card(fusion_sources[0], profile.merged_cards)
 	var b := database.get_card(fusion_sources[1], profile.merged_cards)
-	var merged := fusion_engine.create_fusion(a, b, fusion_candidates[fusion_selected])
+	var selected_index := fusion_selected
+	var selected_candidate: Dictionary = fusion_candidates[selected_index]
+	var existing_result_id := str(selected_candidate.get("existing_card_id", ""))
+	var merged := database.get_card(existing_result_id, profile.merged_cards).duplicate(true) if not existing_result_id.is_empty() else fusion_engine.create_fusion(a, b, selected_candidate)
 	var source_ids: Array[String] = [str(a.id), str(b.id)]
-	if store.consume_and_add(source_ids, merged):
-		fusion_sources.clear()
-		fusion_selected = -1
+	var succeeded := store.consume_and_add_existing(source_ids, existing_result_id) if not existing_result_id.is_empty() else store.consume_and_add(source_ids, merged)
+	if succeeded:
+		fusion_sources = _preserved_fusion_sources(source_ids)
+		fusion_selected = selected_index if fusion_sources.size() == 2 else -1
 		_show_screen("Forge")
 		_show_fusion_result_overlay(a, b, merged)
 	else:
 		_notify("The collection no longer contains both source cards.")
+
+func _preserved_fusion_sources(source_ids: Array[String]) -> Array[String]:
+	var preserved: Array[String] = []
+	for source_id in source_ids:
+		if store.owned(source_id) > preserved.count(source_id): preserved.append(source_id)
+	return preserved
 
 func _show_fusion_result_overlay(a: Dictionary, b: Dictionary, merged: Dictionary) -> void:
 	var shade := ColorRect.new()
@@ -1154,16 +1241,18 @@ func _card_counts(ids: Array[String]) -> Dictionary:
 	return result
 
 func _deck_portrait_entry(card: Dictionary, copies: int, from_collection: bool, highlighted := false) -> Control:
+	return _card_copy_entry(card, copies, "Owned" if from_collection else "Copies", _add_card_to_deck if from_collection else _remove_card_from_deck, highlighted)
+
+func _card_copy_entry(card: Dictionary, copies: int, count_label: String, action: Callable, highlighted := false) -> Control:
 	var row := VBoxContainer.new()
+	row.set_meta("card_id", str(card.id))
 	row.add_theme_constant_override("separation", 3)
 	var portrait := _portrait_button(card, {}, highlighted, int(card.max_hp) > 0)
-	if from_collection:
-		portrait.pressed.connect(_add_card_to_deck.bind(str(card.id)))
-	else:
-		portrait.pressed.connect(_remove_card_from_deck.bind(str(card.id)))
+	portrait.set_meta("card_id", str(card.id))
+	portrait.pressed.connect(action.bind(str(card.id)))
 	row.add_child(portrait)
 	var count := Label.new()
-	count.text = ("Owned: %d" if from_collection else "Copies: %d") % copies
+	count.text = "%s: %d" % [count_label, copies]
 	count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	count.add_theme_font_size_override("font_size", 14)
 	count.add_theme_color_override("font_color", INK)
@@ -1264,6 +1353,7 @@ func _valid_special_choice(card: Dictionary, zone: String) -> bool:
 	return bool(card.is_pillar) and bool(card.is_base) if zone == "foundation" else not bool(card.is_pillar)
 
 func _build_combat() -> Control:
+	if lan.role == "offline" and DisplayServer.get_name() != "headless": lan.start_discovery()
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 14)
 	root.add_child(_section_title("Combat Hall", "Choose a challenge. Opponent behavior is unchanged; difficulty comes from the randomly selected deck."))
@@ -1306,7 +1396,131 @@ func _build_combat() -> Control:
 		list.add_child(_panel(card))
 	scroll.add_child(list)
 	root.add_child(scroll)
+	root.add_child(_build_lan_panel(deck_ready))
 	return root
+
+func _build_lan_panel(deck_ready: bool) -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	box.add_child(_small_heading("LOCAL NETWORK PVP"))
+	var note := Label.new()
+	note.text = "Create a room or join one discovered on the same Wi-Fi. The room creator starts after one opponent connects."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_color_override("font_color", MUTED)
+	box.add_child(note)
+	var status_label := Label.new()
+	status_label.text = lan.status
+	status_label.add_theme_color_override("font_color", GOLD)
+	box.add_child(status_label)
+	if lan.role == "offline":
+		var host_row := HBoxContainer.new()
+		var room_input := LineEdit.new()
+		room_input.placeholder_text = "%s's room" % str(profile.get("name", "Player"))
+		room_input.text = lan.room_name
+		room_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		host_row.add_child(room_input)
+		var host := _button("Create PVP room", NATURE)
+		host.disabled = not deck_ready
+		host.pressed.connect(func(): _host_lan_room(room_input.text))
+		host_row.add_child(host)
+		var refresh := _button("Refresh", WATER)
+		refresh.pressed.connect(lan.refresh_discovery)
+		host_row.add_child(refresh)
+		box.add_child(host_row)
+		var rooms := HBoxContainer.new()
+		rooms.add_theme_constant_override("separation", 8)
+		for room in lan.room_list():
+			var join := _button("Join %s\nHost: %s" % [str(room.get("room_name", "LAN room")), str(room.get("host_name", "Player"))], FIRE)
+			join.disabled = not deck_ready
+			join.pressed.connect(_join_lan_room.bind(room))
+			rooms.add_child(join)
+		if rooms.get_child_count() == 0:
+			var empty := Label.new()
+			empty.text = "No advertised rooms found yet."
+			empty.add_theme_color_override("font_color", MUTED)
+			rooms.add_child(empty)
+		box.add_child(rooms)
+		var direct_row := HBoxContainer.new()
+		var address := LineEdit.new()
+		address.placeholder_text = "Host IPv4 address (optional fallback)"
+		address.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		direct_row.add_child(address)
+		var direct := _button("Join IP", MUTED)
+		direct.disabled = not deck_ready
+		direct.pressed.connect(func():
+			if not address.text.strip_edges().is_empty(): _join_lan_address(address.text.strip_edges(), int(game_config.get("lan", {}).get("game_port", 8910))))
+		direct_row.add_child(direct)
+		box.add_child(direct_row)
+	elif lan.role == "host":
+		var row := HBoxContainer.new()
+		var start := _button("Start LAN match", FIRE)
+		start.disabled = not lan.has_guest()
+		start.pressed.connect(func(): lan.start_hosted_match())
+		row.add_child(start)
+		var close := _button("Close room", MUTED)
+		close.pressed.connect(_leave_lan_room)
+		row.add_child(close)
+		box.add_child(row)
+	else:
+		var leave := _button("Leave room", MUTED)
+		leave.pressed.connect(_leave_lan_room)
+		box.add_child(leave)
+	return _panel(box)
+
+func _active_lan_deck_payload() -> Dictionary:
+	var active_id := str(profile.get("active_deck_id", ""))
+	var deck: Dictionary = profile.get("decks", {}).get(active_id, {})
+	if not _deck_definition_valid(deck): return {}
+	var merged := {}
+	var ids: Array = deck.get("card_ids", []).duplicate()
+	ids.append(str(deck.get("foundation_id", "")))
+	ids.append(str(deck.get("vanguard_id", "")))
+	for id in ids:
+		if profile.get("merged_cards", {}).has(str(id)): merged[str(id)] = profile.merged_cards[str(id)].duplicate(true)
+	return {"name":str(deck.get("name", "Deck")), "foundation_id":str(deck.get("foundation_id", "")), "vanguard_id":str(deck.get("vanguard_id", "")), "card_ids":deck.get("card_ids", []).duplicate(true), "merged_cards":merged}
+
+func _host_lan_room(requested_name: String) -> void:
+	var payload := _active_lan_deck_payload()
+	if payload.is_empty():
+		_notify("Select a valid active deck before hosting.")
+		return
+	lan.host_room(requested_name, str(profile.get("name", "Player")), payload)
+	_show_screen("Combat")
+
+func _join_lan_room(room: Dictionary) -> void:
+	_join_lan_address(str(room.get("address", "")), int(room.get("port", game_config.get("lan", {}).get("game_port", 8910))))
+
+func _join_lan_address(address: String, port: int) -> void:
+	var payload := _active_lan_deck_payload()
+	if payload.is_empty():
+		_notify("Select a valid active deck before joining.")
+		return
+	lan.join_room(address, port, str(profile.get("name", "Player")), payload)
+	_show_screen("Combat")
+
+func _leave_lan_room() -> void:
+	lan.leave_network()
+	_show_screen("Combat")
+
+func _on_lan_rooms_changed() -> void:
+	_queue_lan_combat_refresh()
+
+func _on_lan_status_changed() -> void:
+	_queue_lan_combat_refresh()
+
+func _queue_lan_combat_refresh() -> void:
+	if current_screen != "Combat" or lan_screen_refresh_pending: return
+	lan_screen_refresh_pending = true
+	call_deferred("_refresh_lan_combat_screen")
+
+func _refresh_lan_combat_screen() -> void:
+	lan_screen_refresh_pending = false
+	if current_screen == "Combat": _show_screen("Combat")
+
+func _on_lan_connection_lost(message: String) -> void:
+	if lan_match_active: _cleanup_lan_match()
+	_show_screen("Combat")
+	_notify(message)
 
 func _start_challenge(challenge_id: String) -> void:
 	if not challenges.has(challenge_id): return
@@ -1503,6 +1717,206 @@ func _new_match() -> void:
 		_draw_card(match_state.player)
 		_draw_card(match_state.bot)
 
+func _begin_lan_match(payload: Dictionary) -> void:
+	var is_host := lan.role == "host"
+	var local_definition: Dictionary = payload.get("host" if is_host else "guest", {})
+	var remote_definition: Dictionary = payload.get("guest" if is_host else "host", {})
+	if local_definition.is_empty() or remote_definition.is_empty():
+		_notify("The LAN match deck exchange was incomplete.")
+		return
+	_import_lan_cards(remote_definition.get("merged_cards", {}))
+	var seed := int(payload.get("seed", 1))
+	var host_deck: Array = payload.get("host", {}).get("card_ids", []).duplicate(true)
+	var guest_deck: Array = payload.get("guest", {}).get("card_ids", []).duplicate(true)
+	var shuffle_rng := RandomNumberGenerator.new()
+	shuffle_rng.seed = seed
+	_shuffle_with_rng(host_deck, shuffle_rng)
+	shuffle_rng.seed = seed + 1
+	_shuffle_with_rng(guest_deck, shuffle_rng)
+	var local_deck := host_deck if is_host else guest_deck
+	var remote_deck := guest_deck if is_host else host_deck
+	var local_name := str(payload.get("host_name" if is_host else "guest_name", "Player"))
+	var remote_name := str(payload.get("guest_name" if is_host else "host_name", "Opponent"))
+	var action_rng := RandomNumberGenerator.new()
+	action_rng.seed = seed + 101
+	match_state = {"mode":"lan", "turn":1, "finished":false, "busy":false, "message":"Your turn." if is_host else "Waiting for %s." % remote_name, "targeting":{}, "rng":action_rng, "challenge_name":"LAN PVP", "player_name":local_name, "opponent_name":remote_name, "player":_new_player(local_deck, str(local_definition.get("foundation_id", "pillar_fire")), str(local_definition.get("vanguard_id", "ember_pup"))), "bot":_new_player(remote_deck, str(remote_definition.get("foundation_id", "pillar_fire")), str(remote_definition.get("vanguard_id", "ember_pup")))}
+	for i in 7:
+		_draw_card(match_state.player)
+		_draw_card(match_state.bot)
+	lan_match_active = true
+	lan_local_turn = is_host
+	lan_sequence = 0
+	_show_screen("Match")
+
+func _import_lan_cards(cards: Dictionary) -> void:
+	lan_imported_cards.clear()
+	for id in cards:
+		lan_imported_cards[id] = profile.get("merged_cards", {}).get(id, null)
+		profile.get_or_add("merged_cards", {})[id] = cards[id].duplicate(true)
+
+func _cleanup_lan_match() -> void:
+	for id in lan_imported_cards:
+		if lan_imported_cards[id] == null: profile.get("merged_cards", {}).erase(id)
+		else: profile.merged_cards[id] = lan_imported_cards[id]
+	lan_imported_cards.clear()
+	lan_match_active = false
+	lan_local_turn = false
+	lan_sequence = 0
+	match_state.clear()
+
+func _lan_snapshot() -> Dictionary:
+	var snapshot := match_state.duplicate(true)
+	snapshot.erase("rng")
+	snapshot.targeting = {}
+	snapshot.busy = false
+	snapshot["lan_sequence"] = lan_sequence
+	return snapshot
+
+func _receive_lan_turn_state(snapshot: Dictionary) -> void:
+	if not lan_match_active or str(snapshot.get("mode", "")) != "lan" or lan_local_turn: return
+	_apply_lan_snapshot(snapshot, true)
+
+func _apply_lan_snapshot(snapshot: Dictionary, grant_turn: bool) -> void:
+	var incoming := snapshot.duplicate(true)
+	var remote_player: Dictionary = incoming.get("player", {})
+	var local_player: Dictionary = incoming.get("bot", {})
+	incoming.player = local_player
+	incoming.bot = remote_player
+	var previous_local_name := str(match_state.get("player_name", profile.get("name", "Player")))
+	var previous_remote_name := str(match_state.get("opponent_name", "Opponent"))
+	incoming.player_name = previous_local_name
+	incoming.opponent_name = previous_remote_name
+	incoming.turn = int(incoming.get("turn", 1)) + (1 if grant_turn else 0)
+	incoming.busy = false
+	incoming.finished = false
+	incoming.targeting = {}
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(incoming.get("lan_sequence", 0)) * 7919 + int(Time.get_ticks_msec())
+	incoming.rng = rng
+	match_state = incoming
+	lan_sequence = int(snapshot.get("lan_sequence", lan_sequence))
+	lan_local_turn = grant_turn
+	if grant_turn:
+		_apply_turn_start(match_state.player, true)
+		_draw_card(match_state.player)
+		match_state.message = "Your turn."
+	else:
+		match_state.message = "%s is taking their turn." % str(match_state.get("opponent_name", "Opponent"))
+	_refresh_match()
+
+func _receive_lan_action(payload: Dictionary) -> void:
+	if not lan_match_active or lan_local_turn: return
+	var snapshot: Dictionary = payload.get("snapshot", {})
+	if not snapshot.is_empty() and str(snapshot.get("mode", "")) == "lan": _apply_lan_snapshot(snapshot, false)
+	var kind := str(payload.get("kind", ""))
+	var event: Dictionary = payload.get("event", {})
+	if kind == "card_play": call_deferred("_animate_remote_card_play", event)
+	elif kind == "ability": call_deferred("_animate_remote_ability", event)
+	elif kind == "combat_attack": call_deferred("_animate_remote_attack", event)
+
+func _send_lan_action(kind: String, event: Dictionary = {}, include_state := true) -> void:
+	if not lan_match_active or not lan_local_turn or bool(match_state.get("finished", false)): return
+	lan_sequence += 1
+	lan.send_action(kind, _lan_snapshot() if include_state else {}, event)
+
+func _animate_remote_card_play(event: Dictionary) -> void:
+	if current_screen != "Match": return
+	var card := database.get_card(str(event.get("card_id", "")), profile.get("merged_cards", {}))
+	var slot := int(event.get("slot", -1))
+	if slot >= 0:
+		var portrait: Variant = bot_slot_nodes.get(slot)
+		if is_instance_valid(portrait):
+			portrait.scale = Vector2(0.72, 0.72)
+			portrait.pivot_offset = portrait.size * 0.5
+			portrait.create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(portrait, "scale", Vector2.ONE, 0.34)
+			_ability_flash(portrait, {"id":"PLAYED", "cost":card.get("cost", {})})
+		return
+	var reveal := _full_card(card, -1)
+	reveal.position = Vector2(maxf(16.0, size.x * 0.5 - 120.0), 90.0)
+	reveal.z_index = 900
+	reveal.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(reveal)
+	var tween := reveal.create_tween()
+	tween.tween_interval(0.42)
+	tween.tween_property(reveal, "modulate:a", 0.0, 0.28)
+	tween.tween_callback(reveal.queue_free)
+
+func _animate_remote_ability(event: Dictionary) -> void:
+	var portrait: Variant = bot_slot_nodes.get(int(event.get("source_slot", -1)))
+	if is_instance_valid(portrait): _ability_flash(portrait, event.get("ability", {"id":"ABILITY", "cost":{}}))
+
+func _animate_remote_attack(event: Dictionary) -> void:
+	var attacker: Variant = bot_slot_nodes.get(int(event.get("attacker_slot", -1)))
+	if is_instance_valid(attacker): _attack_wave(attacker)
+	var damage := int(event.get("damage", 0))
+	if bool(event.get("target_player", false)):
+		if damage > 0 and is_instance_valid(player_hp_bar): _animate_hp_damage(player_hp_bar, damage)
+	else:
+		var target: Variant = player_slot_nodes.get(int(event.get("target_slot", -1)))
+		if damage > 0 and is_instance_valid(target): _floating_damage(target, damage)
+		var return_damage := int(event.get("return_damage", 0))
+		if return_damage > 0 and is_instance_valid(attacker): _floating_damage(attacker, return_damage)
+
+func _receive_lan_match_finished(payload: Dictionary) -> void:
+	if not lan_match_active: return
+	lan.mark_match_finished()
+	var sender_won := bool(payload.get("sender_won", false))
+	var reason := str(payload.get("reason", "match"))
+	match_state.finished = true
+	var outcome := "draw" if reason == "draw" else "loss" if sender_won else "win"
+	var explanation := "Your opponent surrendered." if reason == "surrender" else "Both players reached 0 HP." if reason == "draw" else "Your HP reached 0." if sender_won else "Your opponent's HP reached 0."
+	match_state.message = "Draw." if outcome == "draw" else "You lose." if outcome == "loss" else "You win."
+	_refresh_match()
+	call_deferred("_show_lan_result_popup", outcome, explanation)
+
+func _show_lan_result_popup(outcome: String, explanation: String) -> void:
+	var previous := get_node_or_null("LanResultOverlay")
+	if previous: previous.queue_free()
+	if current_screen != "Match" or not lan_match_active: return
+	if is_instance_valid(surrender_button): surrender_button.disabled = true
+	if is_instance_valid(end_turn_button): end_turn_button.disabled = true
+	var shade := ColorRect.new()
+	shade.name = "LanResultOverlay"
+	shade.color = Color("071015dc")
+	shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	shade.z_index = 1200
+	add_child(shade)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	shade.add_child(center)
+	var panel := VBoxContainer.new()
+	panel.custom_minimum_size = Vector2(480, 250)
+	panel.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_theme_constant_override("separation", 18)
+	var title := Label.new()
+	title.text = "DRAW" if outcome == "draw" else "DEFEAT" if outcome == "loss" else "VICTORY"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 42)
+	title.add_theme_color_override("font_color", MUTED if outcome == "draw" else FIRE if outcome == "loss" else GOLD)
+	panel.add_child(title)
+	var reason := Label.new()
+	reason.text = explanation
+	reason.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	reason.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	reason.add_theme_font_size_override("font_size", 20)
+	reason.add_theme_color_override("font_color", INK)
+	panel.add_child(reason)
+	var close := _button("Return to Combat", NATURE if outcome == "win" else WATER)
+	close.custom_minimum_size.y = 54
+	close.pressed.connect(_dismiss_lan_result)
+	panel.add_child(close)
+	center.add_child(_panel(panel))
+	shade.modulate.a = 0.0
+	shade.create_tween().tween_property(shade, "modulate:a", 1.0, 0.22)
+
+func _dismiss_lan_result() -> void:
+	var overlay := get_node_or_null("LanResultOverlay")
+	if overlay: overlay.queue_free()
+	_cleanup_lan_match()
+	lan.leave_network()
+	_show_screen("Combat")
+
 func _new_player(deck: Array, foundation_id := "pillar_fire", vanguard_id := "ember_pup") -> Dictionary:
 	var board: Array = []
 	board.resize(32)
@@ -1516,6 +1930,14 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _surrender_match() -> void:
 	if match_state.is_empty() or bool(match_state.get("finished", false)): return
+	if str(match_state.get("mode", "")) == "lan":
+		lan.send_match_finished({"sender_won":false, "reason":"surrender"})
+		lan.mark_match_finished()
+		match_state.finished = true
+		match_state.message = "You surrendered."
+		_refresh_match()
+		call_deferred("_show_lan_result_popup", "loss", "You surrendered the match.")
+		return
 	match_state.clear()
 	_show_screen("Lobby")
 	_notify("You surrendered the match.")
@@ -1524,11 +1946,13 @@ func _draw_card(player: Dictionary) -> void:
 	if not player.deck.is_empty(): player.hand.append(player.deck.pop_back())
 
 func _play_hand_card(index: int) -> void:
+	if not _local_match_actions_allowed(): return
 	if bool(match_state.busy) or not match_state.targeting.is_empty() or index < 0 or index >= match_state.player.hand.size(): return
 	var id: String = match_state.player.hand[index]
 	_play_player_card(id, "hand", index)
 
 func _play_start_card(zone: String) -> void:
+	if not _local_match_actions_allowed(): return
 	if bool(match_state.busy) or bool(match_state.finished) or not match_state.targeting.is_empty(): return
 	var id := str(match_state.player.get(zone, ""))
 	if not id.is_empty(): _play_player_card(id, zone, -1)
@@ -1542,7 +1966,10 @@ func _restore_available_card(id: String, source: String) -> void:
 	else: match_state.player[source] = id
 
 func _play_player_card(id: String, source: String, index: int) -> void:
+	if not _local_match_actions_allowed(): return
 	var card := database.get_card(id, profile.merged_cards)
+	var played := false
+	var played_slot := -1
 	if card.is_pillar:
 		if not _can_pay(match_state.player.mana, card.cost):
 			match_state.message = "Not enough mana for %s." % card.display_name
@@ -1552,6 +1979,7 @@ func _play_player_card(id: String, source: String, index: int) -> void:
 		_remove_available_card(source, index)
 		match_state.player.pillars.append(_pillar_record(card.id))
 		match_state.message = "%s entered. It will produce mana at end of turn." % card.display_name
+		played = true
 	else:
 		var cost: Dictionary = card.cost
 		if not _can_pay(match_state.player.mana, cost):
@@ -1564,6 +1992,7 @@ func _play_player_card(id: String, source: String, index: int) -> void:
 			if not _begin_player_spell(card):
 				_resolve_spell(card, match_state.player, match_state.bot, true)
 				match_state.player.discard.append(id)
+			played = true
 		else:
 			var slot := _random_empty_slot(match_state.player.board)
 			if slot < 0:
@@ -1572,12 +2001,16 @@ func _play_player_card(id: String, source: String, index: int) -> void:
 				_refund(match_state.player.mana, cost)
 			else:
 				match_state.player.board[slot] = _unit_record(card)
+				played_slot = slot
+				played = true
 				_apply_on_play(card, match_state.bot, true, slot)
 				if match_state.bot.hp <= 0:
 					_finish_match("You win.", true)
 				elif match_state.targeting.get("kind", "") != "effect":
 					match_state.message = "%s entered." % card.display_name
 	_refresh_match()
+	if played and not bool(match_state.get("finished", false)):
+		_send_lan_action("card_play", {"card_id":id, "slot":played_slot, "is_pillar":bool(card.is_pillar), "is_spell":str(card.card_type) == "Spell"})
 
 func _pillar_record(card_id: String) -> Dictionary:
 	var card := database.get_card(card_id, profile.merged_cards)
@@ -1736,6 +2169,7 @@ func _begin_effect_target(effect: String, strength: int, rule: String, card_id: 
 	match_state.message = "Select a highlighted target for %s." % database.get_card(card_id, profile.merged_cards).display_name
 
 func _board_target_clicked(side: String, slot: int) -> void:
+	if not _local_match_actions_allowed(): return
 	if match_state.targeting.get("kind", "") == "ability":
 		if side == "bot": _enemy_slot_clicked(slot)
 		return
@@ -1743,6 +2177,7 @@ func _board_target_clicked(side: String, slot: int) -> void:
 	_resolve_player_effect_target(side, slot, false)
 
 func _hp_target_input(event: InputEvent, side: String) -> void:
+	if not _local_match_actions_allowed(): return
 	if ((event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT) or (event is InputEventScreenTouch and event.pressed)) and _is_hp_targetable():
 		_resolve_player_effect_target(side, -1, true)
 
@@ -1803,6 +2238,7 @@ func _resolve_player_effect_target(side: String, slot: int, targets_player: bool
 			if int(targeting.remaining) > 0 and _has_effect_targets():
 				match_state.message = "Deep Freeze: select up to %d more creature%s." % [int(targeting.remaining), "" if int(targeting.remaining) == 1 else "s"]
 				_refresh_match()
+				_send_lan_action("effect", {"card_id":str(targeting.get("card_id", "")), "effect":effect})
 				return
 			match_state.targeting = {}
 	elif effect == "shell_multi":
@@ -1815,6 +2251,7 @@ func _resolve_player_effect_target(side: String, slot: int, targets_player: bool
 		if int(targeting.remaining) > 0 and _has_effect_targets():
 			match_state.message = "Protective Canopy: choose up to %d more creature%s." % [int(targeting.remaining), "" if int(targeting.remaining) == 1 else "s"]
 			_refresh_match()
+			_send_lan_action("effect", {"card_id":str(targeting.get("card_id", "")), "effect":effect})
 			return
 		match_state.targeting = {}
 	elif effect == "nature_buff":
@@ -1837,6 +2274,7 @@ func _resolve_player_effect_target(side: String, slot: int, targets_player: bool
 	if bool(targeting.get("pending_spell", false)):
 		match_state.player.discard.append(str(targeting.card_id))
 	_refresh_match()
+	_send_lan_action("effect", {"card_id":str(targeting.get("card_id", "")), "effect":effect})
 
 func _has_effect_targets() -> bool:
 	for side in ["player", "bot"]:
@@ -2020,12 +2458,14 @@ func _random_empty_slot(board: Array) -> int:
 	return empty[match_state.rng.randi_range(0, empty.size() - 1)]
 
 func _begin_pillar_merge(index: int) -> void:
+	if not _local_match_actions_allowed(): return
 	if bool(match_state.busy): return
 	match_state.targeting = {"kind":"pillar_merge", "source":index}
 	match_state.message = "Select a compatible base Pillar to complete the merge."
 	_refresh_match()
 
 func _pillar_clicked(index: int) -> void:
+	if not _local_match_actions_allowed(): return
 	if match_state.targeting.get("kind", "") != "pillar_merge": return
 	var source := int(match_state.targeting.source)
 	if source == index or source >= match_state.player.pillars.size() or index >= match_state.player.pillars.size(): return
@@ -2090,6 +2530,7 @@ func _complete_pillar_attunement(source: int, target: int, hybrid_id: String) ->
 	var overlay := get_node_or_null("AttuneOverlay")
 	if overlay: overlay.queue_free()
 	_refresh_match()
+	_send_lan_action("card_play", {"card_id":hybrid_id, "slot":-1, "is_pillar":true, "is_spell":false})
 
 func _cancel_pillar_attunement() -> void:
 	match_state.targeting = {}
@@ -2099,6 +2540,7 @@ func _cancel_pillar_attunement() -> void:
 	_refresh_match()
 
 func _activate_ability(slot: int, ability_index: int) -> void:
+	if not _local_match_actions_allowed(): return
 	if bool(match_state.busy) or not match_state.targeting.is_empty() or slot < 0 or slot >= 32: return
 	var unit: Variant = match_state.player.board[slot]
 	if unit == null: return
@@ -2163,9 +2605,14 @@ func _execute_ability(source_slot: int, ability: Dictionary, target_slot: int) -
 				match_state.message = "A Sapling joins your battlefield."
 			else:
 				match_state.message = "The battlefield is full."
+	_send_lan_action("ability", {"source_slot":source_slot, "target_slot":target_slot, "ability":ability.duplicate(true)})
 
 func _end_turn() -> void:
 	if bool(match_state.busy) or bool(match_state.finished) or not match_state.targeting.is_empty(): return
+	if str(match_state.get("mode", "")) == "lan":
+		if not lan_local_turn: return
+		await _end_lan_turn()
+		return
 	match_state.busy = true
 	match_state.targeting = {}
 	_refresh_match()
@@ -2193,6 +2640,28 @@ func _end_turn() -> void:
 	match_state.busy = false
 	match_state.message = "Turn %d. Play cards and abilities in any order." % match_state.turn
 	_refresh_match()
+
+func _end_lan_turn() -> void:
+	match_state.busy = true
+	match_state.targeting = {}
+	_refresh_match()
+	await _resolve_combat_animated(match_state.player, match_state.bot, true)
+	if bool(match_state.get("finished", false)): return
+	await _resolve_burn_animated(match_state.player, "player")
+	if bool(match_state.get("finished", false)): return
+	await _resolve_clocks_animated(match_state.player, "player")
+	await _resolve_spore_attrition_animated(match_state.player, "player")
+	await _produce_pillar_mana_animated(match_state.player, player_pillars)
+	lan_sequence += 1
+	lan_local_turn = false
+	match_state.busy = false
+	match_state.message = "Waiting for %s." % str(match_state.get("opponent_name", "opponent"))
+	lan.send_turn_state(_lan_snapshot())
+	_refresh_match()
+
+func _local_match_actions_allowed() -> bool:
+	if bool(match_state.get("finished", false)): return false
+	return str(match_state.get("mode", "")) != "lan" or lan_local_turn
 
 func _bot_turn() -> void:
 	var bot: Dictionary = match_state.bot
@@ -2306,6 +2775,8 @@ func _resolve_combat_animated(attacker: Dictionary, defender: Dictionary, player
 			var return_damage := int(target_unit.attack)
 			damage = maxi(0, damage - maxi(_card_ability_strength(target_card, "Shell"), int(target_unit.get("temporary_shell", 0))))
 			return_damage = maxi(0, return_damage - maxi(_card_ability_strength(card, "Shell"), int(unit.get("temporary_shell", 0))))
+			if lan_match_active and player_attacking:
+				_send_lan_action("combat_attack", {"attacker_slot":slot, "target_slot":target_slot, "target_player":false, "damage":damage, "return_damage":return_damage}, false)
 			target_unit.hp -= damage
 			unit.hp -= return_damage
 			_sync_unit_portrait("bot" if player_attacking else "player", target_slot)
@@ -2340,6 +2811,8 @@ func _resolve_combat_animated(attacker: Dictionary, defender: Dictionary, player
 				return
 		else:
 			damage += _card_ability_strength(card, "Scald")
+			if lan_match_active and player_attacking:
+				_send_lan_action("combat_attack", {"attacker_slot":slot, "target_player":true, "damage":damage}, false)
 			defender.hp -= damage
 			var inflicted_burn := _unit_burn_strength(unit, card)
 			if inflicted_burn > 0:
@@ -2515,8 +2988,8 @@ func _sync_hp_ui() -> void:
 	if match_state.is_empty() or not is_instance_valid(player_hp_bar) or not is_instance_valid(bot_hp_bar): return
 	_rebuild_hp_bar(player_hp_bar, match_state.player, _incoming_face_damage(match_state.bot, match_state.player))
 	_rebuild_hp_bar(bot_hp_bar, match_state.bot, _incoming_face_damage(match_state.player, match_state.bot))
-	if is_instance_valid(player_stats): player_stats.text = "YOU  %d HP    Deck %d    Discard %d" % [match_state.player.hp, match_state.player.deck.size(), match_state.player.discard.size()]
-	if is_instance_valid(bot_stats): bot_stats.text = "BOT  %d HP    Hand %d    Deck %d" % [match_state.bot.hp, match_state.bot.hand.size(), match_state.bot.deck.size()]
+	if is_instance_valid(player_stats): player_stats.text = "%s  %d HP    Deck %d    Discard %d" % [str(match_state.get("player_name", "YOU")).to_upper(), match_state.player.hp, match_state.player.deck.size(), match_state.player.discard.size()]
+	if is_instance_valid(bot_stats): bot_stats.text = "%s  %d HP    Hand %d    Deck %d" % [str(match_state.get("opponent_name", "BOT")).to_upper(), match_state.bot.hp, match_state.bot.hand.size(), match_state.bot.deck.size()]
 
 func _sync_unit_portrait(side: String, slot: int) -> void:
 	var owner: Dictionary = match_state.player if side == "player" else match_state.bot
@@ -2882,6 +3355,15 @@ func _finish_match(message: String, player_won: bool) -> void:
 	if bool(match_state.get("finished", false)): return
 	match_state.finished = true
 	match_state.message = message
+	if str(match_state.get("mode", "")) == "lan":
+		var reason := "draw" if message.to_lower().contains("draw") else "hp_zero"
+		lan.send_match_finished({"sender_won":player_won, "reason":reason})
+		lan.mark_match_finished()
+		var outcome := "draw" if reason == "draw" else "win" if player_won else "loss"
+		var explanation := "Both players reached 0 HP." if reason == "draw" else "Your opponent's HP reached 0." if player_won else "Your HP reached 0."
+		_refresh_match()
+		call_deferred("_show_lan_result_popup", outcome, explanation)
+		return
 	if not bool(match_state.get("reward_applied", false)):
 		profile.xp = int(profile.get("xp", 0)) + int(match_state.get("win_xp" if player_won else "loss_xp", 0))
 		if player_won: profile.currency = int(profile.get("currency", 0)) + int(match_state.get("win_prize", 0))
@@ -2904,10 +3386,13 @@ func _refresh_match() -> void:
 	if match_header == null: return
 	_refresh_nature_bonuses(match_state.player, true)
 	_refresh_nature_bonuses(match_state.bot, false)
-	match_header.text = "%s  |  TURN %d  |  YOUR ACTIONS" % [str(match_state.get("challenge_name", "PRACTICE")).to_upper(), match_state.turn]
-	end_turn_button.disabled = bool(match_state.busy) or not match_state.targeting.is_empty()
-	player_stats.text = "YOU  %d HP    Deck %d    Discard %d" % [match_state.player.hp, match_state.player.deck.size(), match_state.player.discard.size()]
-	bot_stats.text = "BOT  %d HP    Hand %d    Deck %d" % [match_state.bot.hp, match_state.bot.hand.size(), match_state.bot.deck.size()]
+	var lan_mode := str(match_state.get("mode", "")) == "lan"
+	var action_text := ("YOUR TURN" if lan_local_turn else "OPPONENT TURN") if lan_mode else "YOUR ACTIONS"
+	match_header.text = "%s  |  TURN %d  |  %s" % [str(match_state.get("challenge_name", "PRACTICE")).to_upper(), match_state.turn, action_text]
+	end_turn_button.disabled = bool(match_state.finished) or bool(match_state.busy) or not match_state.targeting.is_empty() or (lan_mode and not lan_local_turn)
+	if is_instance_valid(surrender_button): surrender_button.disabled = bool(match_state.finished)
+	player_stats.text = "%s  %d HP    Deck %d    Discard %d" % [str(match_state.get("player_name", "YOU")).to_upper(), match_state.player.hp, match_state.player.deck.size(), match_state.player.discard.size()]
+	bot_stats.text = "%s  %d HP    Hand %d    Deck %d" % [str(match_state.get("opponent_name", "BOT")).to_upper(), match_state.bot.hp, match_state.bot.hand.size(), match_state.bot.deck.size()]
 	match_status.text = match_state.message
 	_rebuild_mana(player_mana, match_state.player.mana)
 	_rebuild_mana(bot_mana, match_state.bot.mana)
@@ -3167,6 +3652,7 @@ func _hand_card(card: Dictionary, index: int, player_owned: bool) -> Control:
 	return row
 
 func _is_card_playable(card: Dictionary) -> bool:
+	if not _local_match_actions_allowed(): return false
 	if bool(match_state.get("busy", false)) or bool(match_state.get("finished", false)) or not match_state.get("targeting", {}).is_empty(): return false
 	if bool(card.get("is_pillar", false)): return _can_pay(match_state.player.mana, card.cost)
 	if not _can_pay(match_state.player.mana, card.cost): return false

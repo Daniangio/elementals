@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://oxfndylovgqk"
-path="res://.godot/imported/mass_incubation.jpg-2d0016f5067e5c51c4ed1995bd85e742.ctex"
+uid="uid://g6s5afhnx33j"
+path="res://.godot/imported/ember_infusion.jpg-f19799ff607f03f0eb719dadad7dc9b0.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/cards/nature/mass_incubation.jpg"
-dest_files=["res://.godot/imported/mass_incubation.jpg-2d0016f5067e5c51c4ed1995bd85e742.ctex"]
+source_file="res://assets/cards/fire/ember_infusion.jpg"
+dest_files=["res://.godot/imported/ember_infusion.jpg-f19799ff607f03f0eb719dadad7dc9b0.ctex"]
 
 [params]
 

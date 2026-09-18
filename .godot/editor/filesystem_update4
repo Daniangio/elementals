@@ -7,3 +7,6 @@ res://scripts/profile_store.gd
 res://README.md
 res://Main.tscn
 res://data/starter_decks.json
+res://scripts/lan_multiplayer.gd
+res://tests/lan_peer_test.gd
+res://scripts/fusion_engine.gd

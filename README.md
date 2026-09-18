@@ -16,6 +16,7 @@ The prototype includes four working areas:
 - Multiple offline profiles keep independent progression, collections, decks, currency, and pack inventory.
 - The Lobby links Profile, Collection, Deck, Forge, Bazaar, and Combat, with future rooms declared in configuration.
 - Combat challenges define their entry fee, win prize, XP, and random opponent-deck pool in JSON.
+- Combat also supports discoverable two-player LAN rooms: one player hosts, one joins, and the host starts the match.
 - Economy, starter grants, rewards, packs, individual Bazaar card prices, rooms, and fantasy background paths are tunable under `data/`.
 - The Deck Library manages named active decks; its editor creates and saves 30–120 card decks while enforcing ownership and copy rules.
 - Match runs the board, Pillars, mana, abilities, animated combat, and bot turns.
@@ -35,7 +36,10 @@ Run the project by opening `project.godot` in Godot 4.7 or by starting the proje
 - `scripts/card_database.gd`: loads base data and resolves cards.
 - `scripts/fusion_engine.gd`: generates legal Confluence and budgeted Imprint results.
 - `scripts/profile_store.gd`: persists collection, decks, and merged cards.
+- `scripts/lan_multiplayer.gd`: ENet room transport, UDP room discovery, and match-state handoff.
 - `scripts/main.gd`: screens and match orchestration.
 - `tests/`: deterministic rule, gameplay, UI, and capture checks.
 
 Persistent player data is stored under Godot's `user://` directory in `accounts.json`. The old `profile.json` is only a one-time legacy import source. Run `godot --headless --path . --script res://scripts/reset_profiles.gd` for a clean first-run debug reset.
+
+Collection debugging is currently enabled through `debug.enabled` in `data/game_config.json`. The displayed and usable ownership of every collectible card is increased by `debug.owned_card_bonus` (100 by default) without writing those virtual copies to the account file. Set the flag back to `false` for normal ownership rules.

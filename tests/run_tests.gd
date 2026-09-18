@@ -85,6 +85,11 @@ func _init() -> void:
 	_check(bot_data.size() >= 6 and bot_data.values().all(func(deck): return deck.get("card_ids", []).size() >= 30), "Bot difficulty pools provide several valid-size decks")
 	_check(challenge_data.size() >= 3 and challenge_data.values().all(func(challenge): return challenge.get("bot_deck_ids", []).size() >= 2), "Challenges define costs, prizes, and random multi-deck pools")
 	_check(_read_json("res://data/bootstrap_profile.json").get("collection", {}).is_empty(), "Fresh profile bootstrap starts with no cards")
+	var debug_store := ProfileStore.new()
+	debug_store.profile = {"collection":{"ember_pup":2}, "merged_cards":{}}
+	debug_store.config = {"debug":{"enabled":true, "owned_card_bonus":100}}
+	debug_store.debug_collectible_ids = {"ember_pup":true}
+	_check(debug_store.owned("ember_pup") == 102 and debug_store.owned("sapling") == 0, "Debug ownership adds 100 only to collectible cards")
 	print("ELEMENTALS RULE TESTS: %d failure(s)" % failures)
 	quit(failures)
 

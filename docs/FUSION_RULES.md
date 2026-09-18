@@ -43,19 +43,25 @@ data/abilities.json is the authoritative ability catalog. Every ability has its 
 
 Ability fidelity is deliberately more generous than stat fidelity so even highly compressed hybrids retain meaningful gameplay identity. The Imprint budget is a ceiling. A package may leave budget unused, but it can never exceed the ceiling.
 
+When both parents carry abilities, the effective ceiling has a configurable identity floor: it is raised, when necessary, to the combined value of the minimum authored version of every ability from both parents. This guarantees that generation can present each parent's effects alone and together instead of allowing source order or one expensive effect to erase the second parent's identity. The ceiling never exceeds the value of the parents' complete original abilities.
+
+An ability-free **wildtype** converts its otherwise unused effective ability budget into extra ATK and HP. The conversion and minimum bonus are explicit in `data/fusion_rules.json`; the current rule grants each stat `round(unused ability value × 0.5)`, with a minimum of +1 to each stat whenever positive ability value was relinquished. Other packages do not receive this compensation.
+
 ## Package generation
 
 For each Imprint cost, generation is deterministic:
 
 1. Read every source ability.
 2. Generate only authored legal strength variants, never stronger than the source.
-3. Enumerate packages under the Imprint budget.
-4. Consider explicit transformation recipes from data/fusion_rules.json.
-5. Remove exact duplicates.
-6. Rank packages that retain abilities from both sources first, then by spent value, effect count, and stable signature.
-7. Present every legal strategic package to the player.
+3. Apply the dual-source identity floor when both parents have abilities.
+4. Enumerate every legal package under the effective Imprint budget, including each parent alone and cross-parent combinations.
+5. Consider explicit transformation recipes from data/fusion_rules.json.
+6. Remove exact duplicates.
+7. Rank packages that retain abilities from both sources first, then by spent value, effect count, and stable signature.
+8. Apply wildtype stat compensation to the empty package.
+9. Present every legal strategic package to the player.
 
-The empty package is legal when no ability can fit. Fixed abilities are indivisible: they are retained at full value or omitted. Scalable abilities may be weakened only to a configured discrete strength.
+The empty package is always a legal wildtype choice. Fixed abilities are indivisible: they are retained at full value or omitted. Scalable abilities may be weakened only to a configured discrete strength.
 
 Recipes are alternative packages with their own output value. For example, Burn plus Freeze may become the strengthened Scald 5 only when Scald's configured value fits the current budget.
 

@@ -268,7 +268,7 @@ func _run() -> void:
 	game.match_state.player.board.fill(null)
 	game.match_state.bot.board.fill(null)
 	game.match_state.player.board[3] = game._unit_record(game.database.get_card("magma_reaver"))
-	var burn_hp_before: nt = game.match_state.bot.hp
+	var burn_hp_before: int = game.match_state.bot.hp
 	await game._resolve_combat_animated(game.match_state.player, game.match_state.bot, true)
 	_check(game.match_state.bot.hp == burn_hp_before - 10 and game.match_state.bot.burn == 1, "Burn adds a delayed stack instead of immediate attack damage")
 	await game._resolve_combat_animated(game.match_state.player, game.match_state.bot, true)
@@ -381,7 +381,7 @@ func _run() -> void:
 
 	var pillar: Dictionary = game.database.get_card("pillar_fire")
 	game.store.profile.collection[pillar.id] = 10
-	_check(game._deck_copy_limit(pillar) == 10, "Pillar deck limit equals owned copies, not three")
+	_check(game._deck_copy_limit(pillar) == game.store.owned(pillar.id), "Pillar deck limit equals owned copies, including the debug bonus")
 	var creature: Dictionary = game.database.get_card("ember_pup")
 	game.store.profile.collection[creature.id] = 10
 	_check(game._deck_copy_limit(creature) == 6, "Ordinary card deck limit is six")
@@ -429,6 +429,24 @@ func _run() -> void:
 	var first_seed: int = game.match_state.rng.seed
 	game._new_match()
 	_check(game.match_state.rng.seed != first_seed, "Each match uses a newly randomized shuffle seed")
+	var lan_deck: Dictionary = game._active_lan_deck_payload()
+	game.lan.role = "host"
+	game._begin_lan_match({"seed":4242, "host":lan_deck, "guest":lan_deck, "host_name":"Host", "guest_name":"Guest"})
+	_check(game.lan_match_active and game.lan_local_turn and game.match_state.player_name == "Host" and game.match_state.opponent_name == "Guest", "LAN host starts locally with self on the bottom side")
+	var lan_snapshot: Dictionary = game._lan_snapshot()
+	game.lan_local_turn = false
+	game._receive_lan_turn_state(lan_snapshot)
+	_check(game.lan_local_turn and game.match_state.player_name == "Host" and game.match_state.player.has("board"), "LAN turn handoff mirrors the remote state back into the local bottom side")
+	lan_snapshot.player.board[5] = game._unit_record(game.database.get_card("ember_pup"))
+	game.lan_local_turn = false
+	game._receive_lan_action({"kind":"card_play", "snapshot":lan_snapshot, "event":{"card_id":"ember_pup", "slot":5}})
+	_check(game.match_state.bot.board[5] != null and str(game.match_state.bot.board[5].id) == "ember_pup", "LAN card actions synchronize immediately onto the opponent's top battlefield")
+	game._receive_lan_match_finished({"sender_won":false, "reason":"surrender"})
+	await process_frame
+	var lan_result: Control = game.get_node_or_null("LanResultOverlay")
+	_check(lan_result != null and game.surrender_button.disabled and game.match_state.message.begins_with("You win"), "Opponent surrender opens a blocking victory result and disables surrender")
+	game._dismiss_lan_result()
+	_check(game.current_screen == "Combat" and not game.lan_match_active, "LAN result returns to Combat only after confirmation")
 	game.fusion_sources.assign(["ember_pup", "water_sprite"])
 	game._show_screen("Forge")
 	await process_frame
@@ -439,7 +457,15 @@ func _run() -> void:
 	sources.get_child(0).gui_input.emit(wheel)
 	_check(game.fusion_sources.size() == 2, "Mouse wheel scrolling does not remove a Forge source")
 	var result_scroll: ScrollContainer = game.content.find_child("ResultScroll", true, false)
-	_check(result_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO and result_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Forge Imprint combinations scroll horizontally")
+	var imprint_grid: GridContainer = game.content.find_child("Imprint", true, false)
+	_check(result_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED and result_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_AUTO and imprint_grid.columns == 2, "Forge hybrid combinations use two columns with vertical scrolling")
+	var forge_filter: Button
+	for candidate in game.content.find_children("*", "Button", true, false):
+		if candidate.text == "Fire" and candidate.toggle_mode: forge_filter = candidate
+	var forge_collection: Control = game.content.find_child("ForgeCollectionScroll", true, false)
+	var has_base_pillar := not forge_collection.find_children("*", "Button", true, false).filter(func(entry): return str(entry.get_meta("card_id", "")) == "pillar_fire").is_empty()
+	_check(forge_filter != null and has_base_pillar, "Forge reuses the filtered deckbuilder collection panel and includes base Pillars")
+	_check(game._preserved_fusion_sources(["ember_pup", "water_sprite"]).size() == 2, "Forge keeps both source selections while additional copies remain")
 	var saved_currency := int(game.profile.get("currency", 0))
 	var pillar_owned_before := int(game.profile.collection.get("pillar_fire", 0))
 	game._show_screen("Bazaar")

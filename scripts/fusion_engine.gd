@@ -122,6 +122,8 @@ func result_candidates(a: Dictionary, b: Dictionary, chosen_name: String) -> Arr
 		var alpha := hybrid_fidelity(hybrid_cost, str(a.element_tags[0]), str(b.element_tags[0]))
 		var ability_alpha := ability_fidelity(hybrid_cost, str(a.element_tags[0]), str(b.element_tags[0]))
 		var budget := ability_alpha * full_budget
+		if bool(rules.get("ability_package_rules", {}).get("ensure_dual_source_option", true)) and not a.abilities.is_empty() and not b.abilities.is_empty():
+			budget = maxf(budget, _minimum_package_value(a.abilities) + _minimum_package_value(b.abilities))
 		var packages := _ability_packages(a.abilities, b.abilities, budget)
 		for package in packages:
 			for subtype_index in subtype_sets.size():
@@ -130,6 +132,11 @@ func result_candidates(a: Dictionary, b: Dictionary, chosen_name: String) -> Arr
 				hybrid.attack = _compressed_stat(int(a.attack), int(b.attack), alpha)
 				hybrid.max_hp = _compressed_stat(int(a.max_hp), int(b.max_hp), alpha)
 				hybrid.abilities = package.abilities.duplicate(true)
+				if hybrid.abilities.is_empty() and full_budget > 0.0:
+					var wildtype_bonus := _wildtype_stat_bonus(budget - float(package.value))
+					hybrid.attack = int(hybrid.attack) + wildtype_bonus
+					hybrid.max_hp = int(hybrid.max_hp) + wildtype_bonus
+					hybrid["wildtype_stat_bonus"] = wildtype_bonus
 				hybrid.subtypes = subtype_sets[subtype_index].duplicate()
 				hybrid["hybrid_fidelity"] = alpha
 				hybrid["ability_fidelity"] = ability_alpha
@@ -139,6 +146,22 @@ func result_candidates(a: Dictionary, b: Dictionary, chosen_name: String) -> Arr
 				hybrid["fusion_mode"] = "imprint"
 				candidates.append(hybrid)
 	return candidates
+
+func _minimum_package_value(abilities: Array) -> float:
+	var total := 0.0
+	for reference in abilities:
+		var versions := _ability_versions(reference)
+		if versions.is_empty(): continue
+		var cheapest := INF
+		for version in versions: cheapest = minf(cheapest, ability_value(version))
+		if cheapest < INF: total += cheapest
+	return total
+
+func _wildtype_stat_bonus(unused_ability_value: float) -> int:
+	if unused_ability_value <= 0.0: return 0
+	var config: Dictionary = rules.get("wildtype", {})
+	var scaled := roundi(unused_ability_value * float(config.get("stat_bonus_per_unused_ability_value", 0.5)))
+	return maxi(int(config.get("minimum_bonus_per_stat", 1)), scaled)
 
 func _compressed_stat(a: int, b: int, alpha: float) -> int:
 	var raw := float(maxi(a, b)) + alpha * float(mini(a, b))

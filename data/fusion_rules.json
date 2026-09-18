@@ -6,6 +6,8 @@
     {"maximum_compression_ratio":1.0,"alpha":0.25,"ability_alpha":0.5}
   ],
   "stat_rounding":"nearest",
+  "wildtype":{"stat_bonus_per_unused_ability_value":0.5,"minimum_bonus_per_stat":1},
+  "ability_package_rules":{"ensure_dual_source_option":true},
   "ability_fusion_recipes":[
     {"inputs":["Burn","Freeze"],"output":{"id":"Scald","cost":{},"target":"none","kind":"triggered","strength":5}},
     {"inputs":["Growth","Heal"],"output":{"id":"Regeneration","cost":{},"target":"self","kind":"triggered","strength":0}},
