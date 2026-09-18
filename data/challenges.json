@@ -1,0 +1,22 @@
+{
+  "challenges": {
+    "training_ring": {
+      "name": "Training Ring", "difficulty": "Initiate",
+      "description": "A free duel against a straightforward elemental deck.",
+      "entry_cost": 0, "win_prize": 25, "win_xp": 60, "loss_xp": 15,
+      "bot_deck_ids": ["novice_embers", "novice_tides"]
+    },
+    "elemental_trial": {
+      "name": "Elemental Trial", "difficulty": "Adept",
+      "description": "Stronger synergies and more disruptive opposing cards.",
+      "entry_cost": 40, "win_prize": 110, "win_xp": 120, "loss_xp": 25,
+      "bot_deck_ids": ["adept_grove", "adept_frost"]
+    },
+    "confluence_crown": {
+      "name": "Confluence Crown", "difficulty": "Master",
+      "description": "High-value threats and refined decks for a substantial purse.",
+      "entry_cost": 120, "win_prize": 330, "win_xp": 240, "loss_xp": 40,
+      "bot_deck_ids": ["master_inferno", "master_deep"]
+    }
+  }
+}

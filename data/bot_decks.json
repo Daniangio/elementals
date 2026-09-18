@@ -1,0 +1,28 @@
+{
+  "decks": {
+    "novice_embers": {
+      "name": "Novice Embers", "rating": 1, "foundation_id": "pillar_fire", "vanguard_id": "ember_pup",
+      "card_ids": ["pillar_fire","pillar_fire","pillar_fire","pillar_fire","pillar_fire","pillar_fire","ember_spark","ember_spark","ember_spark","ember_spark","ember_pup","ember_pup","ember_pup","ember_pup","ash_wisp","ash_wisp","ash_wisp","ash_wisp","flame_initiate","flame_initiate","flame_initiate","cinder_hound","cinder_hound","cinder_hound","scorchling","scorchling","fireball","fireball","searing_brand","searing_brand"]
+    },
+    "novice_tides": {
+      "name": "Novice Tides", "rating": 1, "foundation_id": "pillar_water", "vanguard_id": "tide_tadpole",
+      "card_ids": ["pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","tide_tadpole","tide_tadpole","tide_tadpole","tide_tadpole","mistling","mistling","mistling","mistling","reef_guard","reef_guard","reef_guard","reef_guard","wave_adept","wave_adept","wave_adept","water_sprite","water_sprite","water_sprite","healing_rain","healing_rain","sea_egg","sea_egg","deep_freeze","deep_freeze"]
+    },
+    "adept_grove": {
+      "name": "Adept Grove", "rating": 2, "foundation_id": "pillar_nature", "vanguard_id": "sprout_caller",
+      "card_ids": ["pillar_nature","pillar_nature","pillar_nature","pillar_nature","pillar_nature","pillar_nature","seedling","seedling","seedling","leaf_elf","leaf_elf","leaf_elf","sprout_caller","sprout_caller","sprout_caller","young_grovekeeper","young_grovekeeper","young_grovekeeper","elf_banneret","elf_banneret","elf_banneret","vine_shepherd","vine_shepherd","verdant_mentor","verdant_mentor","vineling","vineling","ancient_tree","ancient_tree","regrowth"]
+    },
+    "adept_frost": {
+      "name": "Adept Frost", "rating": 2, "foundation_id": "pillar_water", "vanguard_id": "wave_adept",
+      "card_ids": ["pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","cold_current","cold_current","cold_current","reef_guard","reef_guard","reef_guard","wave_adept","wave_adept","wave_adept","undertow_serpent","undertow_serpent","shellback","shellback","frost_drake","frost_drake","tidal_warden","tidal_warden","water_mage","water_mage","deep_freeze","deep_freeze","blizzard","blizzard","healing_rain"]
+    },
+    "master_inferno": {
+      "name": "Master Inferno", "rating": 3, "foundation_id": "pillar_fire", "vanguard_id": "pyre_stalker",
+      "card_ids": ["pillar_fire","pillar_fire","pillar_fire","pillar_fire","pillar_fire","pillar_fire","cinder_hound","cinder_hound","cinder_hound","pyroclast","pyroclast","pyroclast","blazehorn","blazehorn","blazehorn","inferno_beast","inferno_beast","magma_reaver","magma_reaver","hellforged_ram","hellforged_ram","ash_phoenix","ash_phoenix","fireball","fireball","fire_rain","fire_rain","searing_brand","ember_infusion","cinder_ward"]
+    },
+    "master_deep": {
+      "name": "Master of the Deep", "rating": 3, "foundation_id": "pillar_water", "vanguard_id": "tidal_warden",
+      "card_ids": ["pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","pillar_water","frost_drake","frost_drake","frost_drake","tidal_warden","tidal_warden","tidal_warden","abyssal_hook","abyssal_hook","abyssal_hook","glacial_guardian","glacial_guardian","deepwater_spirit","deepwater_spirit","leviathan_whelp","leviathan_whelp","ancient_sea_drake","ancient_sea_drake","deep_freeze","deep_freeze","mass_incubation","mass_incubation","blizzard","blizzard","healing_rain"]
+    }
+  }
+}

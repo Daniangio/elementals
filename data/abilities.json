@@ -2,7 +2,7 @@
   "Merge":{"description":"Select another compatible base Pillar, then Attune the hybrid Pillar to either source element.","value_model":{"type":"fixed","value":0.0},"scalable":false},
   "Scorch":{"description":"When played, deal {strength} damage to any player or card with HP.","value_model":{"type":"linear","base":0.75,"coefficient":0.75,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}},
   "Fury":{"description":"After this creature attacks the opponent, it permanently gains +{strength} ATK.","value_model":{"type":"linear","base":1.5,"coefficient":0.5,"base_strength":1},"scalable":true,"strength":{"min":1,"max":5,"step":1}},
-  "Burn":{"description":"When this creature attacks the opponent, deal {strength} additional damage.","value_model":{"type":"linear","base":1.0,"coefficient":1.0,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}},
+  "Burn":{"description":"When this creature attacks the opponent, add {strength} Burn to that player. Burn stacks and deals its total damage at the end of the afflicted card or player's turn.","value_model":{"type":"linear","base":1.0,"coefficient":1.0,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}},
   "Strike":{"description":"This turn, attack a random opposing creature if one is present; otherwise attack the opponent.","value_model":{"type":"fixed","value":1.0},"scalable":false},
   "Last Spark":{"description":"When this creature is destroyed, deal {strength} damage to the opponent.","value_model":{"type":"linear","base":0.5,"coefficient":0.5,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}},
   "Freeze":{"description":"Pay this ability's cost and choose one opposing card. It cannot attack or activate abilities during its next {strength} turn(s).","value_model":{"type":"lookup","values":{"1":2.0,"2":3.25,"3":4.25}},"scalable":true,"strength":{"min":1,"max":3,"step":1}},
@@ -10,7 +10,7 @@
   "Shell":{"description":"Reduce combat damage dealt to this creature by {strength}, to a minimum of 0.","value_model":{"type":"linear","base":1.0,"coefficient":1.0,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}},
   "Provoke":{"description":"During opposing combat, this creature draws up to {strength} attackers away from its controller.","value_model":{"type":"linear","base":1.5,"coefficient":1.0,"base_strength":1},"scalable":true,"strength":{"min":1,"max":5,"step":1}},
   "Heal":{"description":"Restore {strength} player HP.","value_model":{"type":"linear","base":0.5,"coefficient":0.5,"base_strength":1},"scalable":true,"strength":{"min":1,"max":20,"step":1}},
-  "Growth":{"description":"At the start of your turn, gain {strength} ATK.","value_model":{"type":"linear","base":2.5,"coefficient":1.25,"base_strength":1},"scalable":true,"strength":{"min":1,"max":5,"step":1}},
+  "Growth":{"description":"At the start of your turn, gain +{strength} ATK and +{strength} maximum and current HP.","value_model":{"type":"linear","base":3.0,"coefficient":1.5,"base_strength":1},"scalable":true,"strength":{"min":1,"max":5,"step":1}},
   "Scald":{"description":"When this card attacks, deal {strength} additional damage to its target.","value_model":{"type":"fixed","value":3.0},"scalable":false},
   "Regeneration":{"description":"At turn start, restore player and card HP.","value_model":{"type":"fixed","value":3.0},"scalable":false},
   "Flame Strike":{"description":"When attacking a card, deal {strength} additional damage.","value_model":{"type":"linear","base":1.0,"coefficient":0.5,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}},
@@ -22,6 +22,8 @@
   "Berserker Draught":{"description":"Give any card with HP +{strength} ATK and -3 HP.","value_model":{"type":"linear","base":0.75,"coefficient":0.75,"base_strength":1},"scalable":true,"strength":{"min":1,"max":20,"step":1}},
   "Healing Rain":{"description":"Restore {strength} player HP.","value_model":{"type":"linear","base":0.5,"coefficient":0.5,"base_strength":1},"scalable":true,"strength":{"min":1,"max":20,"step":1}},
   "Regrowth":{"description":"Restore {strength} HP to a friendly card.","value_model":{"type":"linear","base":0.5,"coefficient":0.5,"base_strength":1},"scalable":true,"strength":{"min":1,"max":20,"step":1}}
+  ,"Ignite":{"description":"Add {strength} Burn to any player or card with HP.","value_model":{"type":"linear","base":0.85,"coefficient":0.85,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}}
+  ,"Grant Burn":{"description":"Give a target creature Burn {strength}. Multiple grants stack and remain while that creature stays in play.","value_model":{"type":"linear","base":1.5,"coefficient":1.25,"base_strength":1},"scalable":true,"strength":{"min":1,"max":10,"step":1}}
   ,"Spawn Sapling":{"description":"Create a 1/1 Sapling in a random empty battlefield position.","value_model":{"type":"fixed","value":1.0},"scalable":false}
   ,"Nurture":{"description":"At the start of your turn, give another highest-value friendly creature +{strength} ATK and +{strength} HP.","value_model":{"type":"linear","base":2.5,"coefficient":1.25,"base_strength":1},"scalable":true,"strength":{"min":1,"max":5,"step":1}}
   ,"Elf Chorus":{"description":"Other friendly Elves gain +{strength} ATK while this card remains in play.","value_model":{"type":"linear","base":2.5,"coefficient":1.25,"base_strength":1},"scalable":true,"strength":{"min":1,"max":5,"step":1}}
@@ -30,4 +32,24 @@
   ,"Grove Blessing":{"description":"When played, give every friendly creature +{strength} maximum and current HP.","value_model":{"type":"linear","base":2.5,"coefficient":1.25,"base_strength":1},"scalable":true,"strength":{"min":1,"max":5,"step":1}}
   ,"Elder Call":{"description":"When played, create a 2/2 Elder Sapling in a random empty battlefield position.","value_model":{"type":"fixed","value":3.0},"scalable":false}
   ,"Living Grove":{"description":"This creature gains +{strength}/+{strength} for each other friendly creature.","value_model":{"type":"fixed","value":4.0},"scalable":false}
+  ,"Clock":{"description":"At the end of this creature's controller's turn, reduce Clock by 1. At 0, transform it into a Sea Drake.","value_model":{"type":"fixed","value":3.0},"scalable":false}
+  ,"Frozen Incubation":{"description":"If this Egg would be Frozen, reduce its Clock by the Freeze duration instead. It does not become Frozen.","value_model":{"type":"fixed","value":1.0},"scalable":false}
+  ,"Clear the Tide":{"description":"Remove all Burn from you and your cards, then restore {strength} player HP.","value_model":{"type":"fixed","value":5.0},"scalable":false}
+  ,"Sea Nursery":{"description":"Create {strength} Sea Eggs in random empty friendly battlefield positions.","value_model":{"type":"fixed","value":5.0},"scalable":false}
+  ,"Deep Freeze":{"description":"Choose up to 3 creatures. Freeze each for {strength} turns; Sea Eggs reduce Clock instead.","value_model":{"type":"fixed","value":6.0},"scalable":false}
+  ,"Mass Incubation":{"description":"Create {strength} Sea Eggs in random empty friendly battlefield positions.","value_model":{"type":"fixed","value":12.0},"scalable":false}
+  ,"Blizzard":{"description":"Freeze every creature on both battlefields for {strength} turns. Sea Eggs reduce Clock instead.","value_model":{"type":"fixed","value":12.0},"scalable":false}
+  ,"First Sprout":{"description":"Add {strength} Seed Elves to your hand.","value_model":{"type":"fixed","value":3.0},"scalable":false}
+  ,"Grove Muster":{"description":"Create {strength} 2/2 Elder Saplings in random empty friendly battlefield positions.","value_model":{"type":"fixed","value":6.0},"scalable":false}
+  ,"Protective Canopy":{"description":"Choose up to 3 friendly creatures. Give each Shell {strength} for 2 turns.","value_model":{"type":"fixed","value":3.0},"scalable":false}
+  ,"Nurturing Touch":{"description":"Give a friendly creature +{strength} ATK and +{strength} maximum and current HP permanently.","value_model":{"type":"fixed","value":3.0},"scalable":false}
+  ,"Thorn Volley":{"description":"Deal damage to any target equal to the number of friendly creatures you control.","value_model":{"type":"fixed","value":5.5},"scalable":false}
+  ,"Spore Cloud":{"description":"Create {strength} Spores on the opponent's battlefield. At that side's end turn, each Spore permanently gives a random friendly unit -1 ATK.","value_model":{"type":"fixed","value":7.0},"scalable":false}
+  ,"Spore Attrition":{"description":"At the end of your turn, permanently give a random friendly unit -{strength} ATK.","value_model":{"type":"fixed","value":3.0},"scalable":false}
+  ,"Elf Chorus Spell":{"description":"Give every friendly Elf +{strength} ATK permanently.","value_model":{"type":"fixed","value":7.0},"scalable":false}
+  ,"Verdant Surge":{"description":"Create 3 Seed Elves, then give every friendly creature +1 maximum and current HP permanently.","value_model":{"type":"fixed","value":8.0},"scalable":false}
+  ,"Canopy of Ages":{"description":"Give every friendly creature Shell 2 for 2 turns and restore 5 player HP.","value_model":{"type":"fixed","value":10.5},"scalable":false}
+  ,"Forest Armada":{"description":"Create 4 Seed Elves. If you then control at least 6 creatures, give every friendly creature +1 ATK permanently.","value_model":{"type":"fixed","value":14.0},"scalable":false}
+  ,"Wildheart Strike":{"description":"Deal damage to any target equal to twice the number of friendly creatures you control.","value_model":{"type":"fixed","value":16.0},"scalable":false}
+  ,"Worldroot Ascension":{"description":"Give every friendly creature +3 ATK and +3 maximum and current HP permanently, then create 4 Seed Elves.","value_model":{"type":"fixed","value":24.0},"scalable":false}
 }

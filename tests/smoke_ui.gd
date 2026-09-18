@@ -7,7 +7,7 @@ func _run() -> void:
 	var scene: Control = load("res://Main.tscn").instantiate()
 	root.add_child(scene)
 	await process_frame
-	for screen_name in ["Lobby", "Profile", "Collection", "Forge", "Deck", "DeckEditor", "Bazaar", "Match"]:
+	for screen_name in ["Lobby", "Profile", "Collection", "Forge", "Deck", "DeckEditor", "Bazaar", "Combat", "Match"]:
 		scene._show_screen(screen_name)
 		await process_frame
 		var screen: Control = scene.content.get_child(0)

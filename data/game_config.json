@@ -1,5 +1,9 @@
 {
   "starting_profile": {"level": 1, "xp": 0, "currency": 1000},
+  "deck_rules": {"minimum_cards": 30, "maximum_cards": 120, "maximum_copies_per_name": 6},
+  "starter_decks_path": "res://data/starter_decks.json",
+  "bot_decks_path": "res://data/bot_decks.json",
+  "challenges_path": "res://data/challenges.json",
   "match_rewards": {"win_xp": 100, "win_currency": 50, "loss_xp": 20},
   "packs": {
     "elemental_core": {
@@ -8,7 +12,7 @@
       "price": 100,
       "size": 8,
       "image": "res://assets/pillars/steam.png",
-      "pool": ["ember_spark", "ember_pup", "ash_wisp", "flame_initiate", "cinder_hound", "scorchling", "fury_brute", "fire_charger", "pyroclast", "blazehorn", "inferno_beast", "magma_reaver", "hellforged_ram", "ash_phoenix", "inferno_tyrant", "fireball", "water_sprite", "water_mage", "healing_rain", "vineling", "ancient_tree", "regrowth"]
+      "pool": ["ember_spark", "ember_pup", "ash_wisp", "flame_initiate", "cinder_hound", "scorchling", "fury_brute", "fire_charger", "pyroclast", "blazehorn", "inferno_beast", "magma_reaver", "hellforged_ram", "ash_phoenix", "inferno_tyrant", "fireball", "coalbrand_imp", "pyre_stalker", "searing_brand", "ember_infusion", "water_sprite", "water_mage", "healing_rain", "sea_egg", "sea_drake", "clear_the_tide", "sea_nursery", "deep_freeze", "mass_incubation", "blizzard", "vineling", "ancient_tree", "regrowth", "first_sprout", "grove_muster", "protective_canopy", "nurturing_touch", "thorn_volley", "spore_cloud", "elf_chorus_spell", "verdant_surge", "canopy_of_ages", "forest_armada", "wildheart_strike", "worldroot_ascension"]
     }
   },
   "single_cards": {
@@ -23,7 +27,8 @@
     "Match": "res://assets/pillars/wildfire.png",
     "Profile": "res://assets/pillars/water.png",
     "Bazaar": "res://assets/pillars/fire.png",
-    "Deck": "res://assets/pillars/nature.png"
+    "Deck": "res://assets/pillars/nature.png",
+    "Combat": "res://assets/pillars/wildfire.png"
   },
   "rooms": [
     {"id":"Profile", "description":"Account, level, XP, currency, and profile switching.", "enabled":true},
@@ -31,7 +36,7 @@
     {"id":"Deck", "description":"Build decks and choose Foundation and Vanguard.", "enabled":true},
     {"id":"Forge", "description":"Create Confluence and Imprint cards.", "enabled":true},
     {"id":"Bazaar", "description":"Purchase card packs and individual cards with earned currency.", "enabled":true},
-    {"id":"Match", "description":"Play an offline duel against the local opponent.", "enabled":true},
+    {"id":"Combat", "description":"Choose a challenge, pay its entry fee, and face one of its decks.", "enabled":true},
     {"id":"Quests", "description":"Future challenges and progression objectives.", "enabled":false},
     {"id":"Arena", "description":"Future competitive game modes.", "enabled":false}
   ]

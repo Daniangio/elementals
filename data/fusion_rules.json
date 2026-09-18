@@ -7,7 +7,7 @@
   ],
   "stat_rounding":"nearest",
   "ability_fusion_recipes":[
-    {"inputs":["Burn","Freeze"],"output":{"id":"Scald","cost":{},"target":"none","kind":"triggered","strength":3}},
+    {"inputs":["Burn","Freeze"],"output":{"id":"Scald","cost":{},"target":"none","kind":"triggered","strength":5}},
     {"inputs":["Growth","Heal"],"output":{"id":"Regeneration","cost":{},"target":"self","kind":"triggered","strength":0}},
     {"inputs":["Burn","Strike"],"output":{"id":"Flame Strike","cost":{},"target":"enemy_card","kind":"triggered","strength":2}}
   ]

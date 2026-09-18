@@ -1,0 +1,3 @@
+id,name,element,card_type,cost,atk,hp,abilities,notes
+W-T001,Sea Egg,Water,Creature/Egg,1W,0,2,Clock 3; When Frozen: reduce Clock by freeze duration instead of becoming Frozen.,Transforms into W-T002 Sea Drake when Clock reaches 0.
+W-T002,Sea Drake,Water,Creature/Dragon,5W,5,6,,Vanilla creature; created by Sea Egg.

@@ -22,7 +22,7 @@ Local persistence uses `user://accounts.json`. It stores the active profile ID a
 }
 ```
 
-Legacy `user://profile.json` data is imported into the first account. The bootstrap file is used when a profile is created and when required collection fields are migrated. `data/game_config.json` controls starting level, XP, currency, match rewards, packs, individually purchasable cards and their prices, room availability, and room background paths. Add entries under `single_cards` to expand the Bazaar card market. `data/bootstrap_profile.json` controls starter cards and starter decks.
+Legacy `user://profile.json` data is imported into the first account only when `accounts.json` does not yet exist. Missing card IDs are never backfilled into an existing collection. `data/bootstrap_profile.json` is an empty profile schema. `data/starter_decks.json` defines the one-time choices and exact collection grant; `data/bot_decks.json` defines opponent lists; and `data/challenges.json` maps Combat Hall challenges to costs, rewards, XP, and random deck pools. `data/game_config.json` controls starting stats, the six-copy limit, packs, individually purchasable cards and their prices, room availability, paths, and backgrounds.
 
 ## Card and Ability Schema
 
@@ -57,7 +57,7 @@ Each battlefield is a fixed 32-element array mapped row-major to four rows and e
 
 Pillars are separate match records with a unique runtime ID, an output element, an image, and optionally a Merge action. They have no battlefield-slot index and no count cap. Attuned hybrid definitions add an `attunement` field and a one-mana base-element `cost`; their `element_tags[0]` remains the hybrid mana they produce.
 
-The match state also stores HP, deck, hidden/public hand size, public Foundation and Vanguard IDs, persistent mana, discard, active player, target-selection state, timed player effects such as Cinder Ward, a newly randomized RNG, and an input lock used during animations.
+The match state also stores HP, deck, hidden/public hand size, public Foundation and Vanguard IDs, persistent mana, discard, active player, target-selection state, timed player effects such as Cinder Ward, challenge/reward metadata, the randomly chosen bot-deck ID, a newly randomized RNG, and an input lock used during animations.
 
 ## Interaction Model
 
@@ -75,13 +75,17 @@ The Deck route renders the profile's deck library and `DeckEditor` renders the s
 
 Collection uses a `TabContainer` to keep card and item inventory in independent full-height pages. Forge uses three upper regions (Confluence, centered sources/name, horizontally scrolling Imprint) plus a horizontal collection strip. Forge source selection and `FusionEngine.result_candidates` both reject non-creatures. Fusion ownership is committed before the result overlay begins, so presentation interruption cannot leave consumed sources without the created card.
 
-Pack opening uses the pack size and pool from configuration, updates collection counts atomically in the active profile, saves, and presents the results in an overlay. Bazaar purchases only add unopened inventory.
+Pack opening uses the pack size and pool from configuration, updates collection counts atomically in the active profile, saves, and presents the results in an overlay. The Bazaar uses separate tab pages for single cards and item/pack offers. Purchases save before a modal acquisition tween runs; its input-blocking shade prevents accidental repeat purchases during feedback. Pack purchases add unopened inventory.
 
 Pillar production happens only after combat/effect resolution. The presentation layer groups equal records into a single portrait and stores its element and represented count as UI metadata. At the instant the fixed one-second production highlight begins, that count is added to the existing mana dictionary and the mana grid is redrawn. Neither turn transition replaces nor clears that dictionary.
 
-Bot direct-damage targeting assigns a large bonus to lethal unit targets, then ranks them with `_unit_threat`, which weighs current attack, HP, damage/scaling/control abilities, and engine value. Activated Freeze uses the same valuation to select the highest-value opposing battlefield card, pays the ability's own cost, and records its once-per-turn use. Frozen sources are rejected by both player and bot activation paths. Spell-specific helpers choose low-value sacrifice fodder and high-value surviving buff targets. Cinder Ward is stored as a remaining opposing-combat counter on the protected player; its retaliation is applied in the face-attack branch before deaths are resolved and the counter decrements once after that combat phase.
+Bot direct-damage targeting assigns a large bonus to lethal unit targets, then ranks them with `_unit_threat`, which weighs current attack, HP, damage/scaling/control abilities, and engine value. Burn targeting performs the same check against existing plus newly applied Burn, prioritizing creatures that will die at their next end-of-turn resolution. Activated Freeze uses the same valuation to select the highest-value opposing battlefield card, pays the ability's own cost, and records its once-per-turn use. Frozen sources are rejected by both player and bot activation paths. Spell-specific helpers choose low-value sacrifice fodder and high-value surviving buff targets. Cinder Ward is stored as a remaining opposing-combat counter on the protected player; its retaliation is applied in the face-attack branch before deaths are resolved and the counter decrements once after that combat phase.
 
-The side rails render all six mana pools as a two-column icon grid. Layered HP progress bars show current HP over the projected post-combat value; the forecast uses current board attack, frozen state, armed Strike state, Burn, and Scald. Activated cards receive a short element-colored overlay animation. Portrait artwork uses a shared canvas shader so the image corners follow the rounded card contour.
+Nature spells reuse the generic effect-target state for friendly buffs, multi-target temporary Shell, and creature-count damage. Runtime units store temporary Shell strength and owner-turn duration separately from printed abilities. Spore attrition resolves after Burn and Clock effects but before Pillar production at the afflicted side's end turn. Seed Elf and Spore are non-collectible, non-deck-eligible token definitions; First Sprout may still put Seed Elf IDs into the transient match hand.
+
+All Freeze entry points route through `_apply_freeze_to_unit`. Normal creatures receive the duration as Frozen turns; cards with Frozen Incubation reduce their Clock instead. Clock is initialized from the card's Clock strength in the unit record and advances after that owner's Burn resolution but before Pillar production. Reaching zero replaces the unit record in the same slot with a fresh Sea Drake. Deep Freeze keeps a selected-slot set in targeting state, supports both battlefields, and resolves its pending spell only after three unique selections or exhaustion of legal targets.
+
+The side rails render all six mana pools as a two-column icon grid. Layered HP progress bars show current HP over the projected post-combat value; the immediate-combat forecast uses current board attack, frozen state, armed Strike state, and Scald. Pending Burn is displayed separately because it resolves at the end of its afflicted side's own turn. Cards show pending Burn and permanently granted Burn independently. Activated cards receive a short element-colored overlay animation. Portrait artwork uses a shared canvas shader so the image corners follow the rounded card contour.
 
 `_ability_description` is the single presentation resolver for `abilities.json` text and per-card placeholders such as `strength`, `duration`, and `hp_change`. Full-card spell rows render that description directly. Keyword labels retain `_ability_label` for compactness and use the resolved description as hover-panel content; battlefield activated-ability buttons use the same tooltip source.
 
@@ -89,7 +93,7 @@ The side rails render all six mana pools as a two-column icon grid. Layered HP p
 
 The profile is saved after fusion, every deck edit that is explicitly saved, and debug export. Fusion validates ownership before mutating counts. A failed validation does not partially consume cards.
 
-Existing prototype profiles are migrated by adding missing collection counts and default Foundation/Vanguard fields without deleting merged cards or decks.
+Existing prototype profiles retain their collection, merged cards, and decks, but migration no longer injects missing bootstrap cards. A fresh or newly created profile is empty until `apply_starter_deck` atomically grants its selected starter and creates its active deck. For a clean debug first run, `scripts/reset_profiles.gd` removes `accounts.json`, the legacy `profile.json`, and the debug export from the exact Godot user-data directory.
 
 Room backgrounds are ordinary `TextureRect` layers beneath the application shell. Their resource paths are data-driven and safely fall back to the flat application color if an asset is absent.
 
@@ -99,11 +103,11 @@ Automated checks cover:
 
 - Confluence and fidelity-weighted Imprint cost/stat calculations.
 - Ability metadata coverage, scaling values, budget ceilings, package preservation, and explicit recipes.
-- Unlimited Pillar deck copies and ordinary three-copy limits.
+- Unlimited Pillar deck copies and ordinary six-copy limits.
 - Collection consumption and merged-card acquisition.
 - Delayed end-of-turn Pillar mana and in-match fusion.
 - Random placement constrained to 32 slots.
-- Numeric Scorch, Burn, and Last Spark strength behavior.
+- Numeric Scorch and Last Spark behavior, plus stacking end-of-owner-turn Burn on players and cards.
 - Paid, random-creature Strike behavior.
 - Confluence and Imprint subtype fusion rules.
 - Loading Collection, Fusion, Deck, and Match screens.

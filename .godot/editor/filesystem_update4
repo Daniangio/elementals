@@ -1,7 +1,9 @@
 res://data/abilities.json
 res://data/cards.json
 res://scripts/main.gd
-res://Main.tscn
+res://tests/run_tests.gd
 res://tests/gameplay_tests.gd
+res://scripts/profile_store.gd
 res://README.md
-res://scripts/fusion_engine.gd
+res://Main.tscn
+res://data/starter_decks.json

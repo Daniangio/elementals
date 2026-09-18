@@ -1,0 +1,6 @@
+id,name,element,card_type,cost,effect_text,value_components,design_value,role
+WS201,Clear the Tide,Water,Spell,1,Remove Burn from all friendly creatures and the player. Restore 6 player HP.,Cleanse Burn + Heal 6,5.0,Water recovery / anti-Burn
+WS202,Sea Nursery,Water,Spell,2,Place 2 Sea Eggs into empty friendly board slots.,Spawn 2 Sea Eggs,5.0,Delayed development
+WS203,Deep Freeze,Water,Spell,3,Freeze up to 3 creatures for 2 turns.,Freeze 2 x 3,6.0,Board control
+WS204,Mass Incubation,Water,Spell,5,Place 6 Sea Eggs into empty friendly board slots.,Spawn 6 Sea Eggs,12.0,Large delayed board investment
+WS205,Blizzard,Water,Spell,6,"Freeze all creatures for 2 turns, including your own.",Freeze 2 all,12.0,Symmetric reset / delay

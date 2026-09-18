@@ -136,7 +136,7 @@ Fury is intentionally expensive because it creates compounding tempo. A card tha
 
 ## 4.3 Burn X
 
-**Rule:** Whenever this creature attacks the opponent, it deals `X` additional direct damage.
+**Rule:** Whenever this creature attacks the opponent, add `X` Burn to that player. Burn stacks. At the end of an afflicted card or player's own turn, it takes damage equal to its Burn total and then clears that total.
 
 Initial value estimate:
 
@@ -149,7 +149,7 @@ Therefore:
 | Burn 1 | 1.00 |
 | Burn 2 | 2.00 |
 
-Burn is highly tempo-sensitive. Its absolute-value number should therefore be considered a conservative printed-value estimate, while its tempo profile must always be inspected separately.
+Burn is delayed and can be applied directly to either players or cards. Its absolute-value number is therefore a conservative printed-value estimate: timing, stacking, removal before resolution, and the afflicted side's remaining HP must be inspected separately.
 
 ## 4.4 Strike
 
@@ -260,6 +260,8 @@ This is why Fury must receive a comparatively large ability budget despite somet
 
 ## 6.4 Burn X
 
+After all delayed Burn has resolved:
+
 `TempoDamage(N) = (ATK + X) * N`
 
 Example: 4 ATK with Burn 1:
@@ -268,7 +270,7 @@ Example: 4 ATK with Burn 1:
 - 3 attacks: 15
 - 5 attacks: 25
 
-Burn therefore scales linearly with survival time rather than quadratically like Fury.
+Burn therefore scales linearly with survival time rather than quadratically like Fury, but its `X` component is paid later at the end of the afflicted player's turns. Multiple attackers and repeated attacks add to the same pending stack.
 
 ## 6.5 Last Spark X
 

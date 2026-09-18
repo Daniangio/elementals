@@ -2,17 +2,17 @@
 
 ## Lobby and Profiles
 
-The Lobby is the navigation hub. It lists every current and planned room from `data/game_config.json`: Profile, Collection, Deck, Forge, Bazaar, Match, Quests, and Arena. Planned rooms are visible but disabled.
+The Lobby is the navigation hub. It lists every current and planned room from `data/game_config.json`: Profile, Collection, Deck, Forge, Bazaar, Combat, Quests, and Arena. Planned rooms are visible but disabled.
 
-On a fresh installation, the player chooses a name before entering the Lobby. An offline profile owns its name, level, XP, crowns, collection, unopened packs, merged cards, and decks. The Profile room can create and switch between multiple independent local profiles, similar to choosing a user on a streaming service.
+On a fresh installation, the player chooses a name and then one starter from `data/starter_decks.json`. Before that choice the profile owns no cards. Selecting a starter grants exactly its 30-card main deck plus its Foundation and Vanguard, creates the named deck, and makes it active. An offline profile owns its name, level, XP, crowns, collection, unopened packs, merged cards, and decks. The Profile room can create and switch between multiple independent local profiles, similar to choosing a user on a streaming service.
 
-Winning a match grants the configured XP and crown reward; a loss grants the configured participation XP. Finished matches and surrendered matches return to the Lobby.
+The Combat Hall lists challenges from `data/challenges.json`. Entering immediately pays the configured crown cost, then randomly selects one of the challenge's deck IDs from `data/bot_decks.json`. Bot behavior is shared across difficulties; only its deck changes. Winning grants that challenge's crown prize and XP, while a loss grants its participation XP. Finished and surrendered matches return to the Lobby; an entry fee is not refunded by surrender.
 
 ## Collection and Decks
 
-A player owns a quantity of each collectible card. New profiles are populated from `data/bootstrap_profile.json`; the debug bootstrap grants ten copies of every base card and every attuned hybrid Pillar. The old unattuned hybrid definitions remain non-collectible compatibility records.
+A player owns a quantity of each collectible card. New profiles begin empty and receive only the selected starter grant. `data/bootstrap_profile.json` now contains the empty account schema rather than a debug collection. The old unattuned hybrid definitions remain non-collectible compatibility records.
 
-A main deck contains at least 30 and at most 120 cards. A player cannot add more copies of a card than they own. Cards are copy-limited by displayed name rather than internal ID: at most three main-deck cards may share a name. Every Pillar ignores the three-copy name limit but remains limited by owned copies. Base Fire, Water, and Nature Pillars cost zero. Attuned Steam, Wildfire, and Swamp Pillars may be included in decks and cost one mana of their attuned base element to play.
+A main deck contains at least 30 and at most 120 cards. A player cannot add more copies of a card than they own. Cards are copy-limited by displayed name rather than internal ID: at most six main-deck cards may share a name. Every Pillar ignores the six-copy name limit but remains limited by owned copies. Base Fire, Water, and Nature Pillars cost zero. Attuned Steam, Wildfire, and Swamp Pillars may be included in decks and cost one mana of that attuned base element to play.
 
 The Deck room is a library rather than the editor itself. Every deck preview shows its saved name, Foundation, Vanguard, card count, and active status. From the library a player may create, edit, clone, delete, or make a valid deck active. The active deck is the one loaded by Match. An incomplete draft remains editable but cannot become active; deleting a deck requires confirmation, and the final remaining deck cannot be deleted.
 
@@ -21,13 +21,13 @@ Every deck also chooses two public starting cards outside the main deck:
 - The **Foundation** is one base Pillar.
 - The **Vanguard** is one non-Pillar card.
 
-Foundation and Vanguard choices do not count toward the 30–120 main-deck size or the three-copy name limit. They remain visible to both players and may be played exactly as though they were in hand.
+Foundation and Vanguard choices do not count toward the 30–120 main-deck size or the six-copy name limit. They remain visible to both players and may be played exactly as though they were in hand.
 
 In the Deckbuilder, Foundation and Vanguard are stacked in a right-hand column within the main deck panel, leaving the rest of the vertical space to the main deck and collection. Pressing **Select from collection** arms either slot. The armed slot is highlighted, compatible collection cards are highlighted, and the next compatible card clicked replaces the previous choice. The selector always displays exactly one current card. Saving first validates the deck and then asks for its display name.
 
 ## Bazaar, Packs, and Collection Items
 
-Crowns are the offline in-game currency. The Bazaar sells pack and single-card offers loaded from `data/game_config.json`. Each single-card entry independently defines its card ID and crown price, so the market can be expanded without changing gameplay code. The initial card market sells only the three base Pillars for 12 crowns each. The initial Elemental Core Pack costs the configured amount and contains eight independently drawn base cards.
+Crowns are the offline in-game currency. The Bazaar has separate full-height **Single Cards** and **Items & Packs** pages, both loaded from `data/game_config.json`. Each single-card entry independently defines its card ID and crown price, so the market can be expanded without changing gameplay code. The initial card market sells only the three base Pillars for 12 crowns each. The initial Elemental Core Pack costs the configured amount and contains eight independently drawn base cards. A successful purchase immediately saves the profile and displays a short acquisition animation before refreshing the Bazaar.
 
 Purchased packs are inventory items rather than immediately opened cards. Collection has separate **Cards** and **Items** pages so the card browser uses the full room. Items shows unopened pack quantities and an Open action. Opening a pack displays a full-screen result overlay and adds every revealed card to that profile's collection.
 
@@ -53,7 +53,7 @@ Confirming a merge performs one atomic collection update:
 3. Add one copy of the new merged card to the collection.
 4. Save the profile immediately.
 
-The resulting name is rules-significant for the three-copy deck limit.
+The resulting name is rules-significant for the six-copy deck limit.
 
 ## Match Flow
 
@@ -99,7 +99,7 @@ Each ability reference on a card contains its own cost and target mode. This all
 
 Ability controls appear over the battlefield card and show the ability name and cost. Clicking an ability with no target executes it immediately when affordable. Clicking a targeted ability enters selection mode; legal cards and player HP bars receive a clickable aim marker. A mandatory on-play or spell target must be resolved before another action or End Turn.
 
-Scorch deals its numeric damage to any selected player or card with HP, including its controller and friendly cards. Freeze is an activated targeted ability, normally costing one Water. Its controller selects one opposing card; that card cannot attack or activate abilities for a number of its turns equal to Freeze's strength. The persistent ice overlay shows the remaining count. The bot selects the highest-value legal opposing card. Bounce returns up to its numeric number of highest-threat opposing creatures to their owner's hand and animates each departing card. Shell reduces each instance of combat damage dealt to its creature by its numeric value, to a minimum of zero, and appears as a translucent shield. Provoke redirects up to its numeric number of opposing attackers to fight its creature during combat; its icon and ability flash identify the interception. Strike is activated without selecting a target: during that turn's combat it attacks a random opposing creature if one exists, falling back to the opponent otherwise. Creature combat exchanges both creatures' damage concurrently before deaths and death triggers are resolved.
+Scorch deals its numeric damage to any selected player or card with HP, including its controller and friendly cards. Burn is delayed damage: a creature with Burn X adds X Burn to the opposing player when it attacks that player. Burn can also be placed directly on either player or any card with HP, and every application adds to the existing stack. At the end of the afflicted card or player's own turn, it takes damage equal to its Burn stack and that stack clears. Granted Burn remains on its creature while that creature stays in play. Freeze is an activated targeted ability, normally costing one Water. Its controller selects one opposing card; that card cannot attack or activate abilities for a number of its turns equal to Freeze's strength. The persistent ice overlay shows the remaining count. The bot selects the highest-value legal opposing card. Bounce returns up to its numeric number of highest-threat opposing creatures to their owner's hand and animates each departing card. Shell reduces each instance of combat damage dealt to its creature by its numeric value, to a minimum of zero, and appears as a translucent shield. Provoke redirects up to its numeric number of opposing attackers to fight its creature during combat; its icon and ability flash identify the interception. Strike is activated without selecting a target: during that turn's combat it attacks a random opposing creature if one exists, falling back to the opponent otherwise. Creature combat exchanges both creatures' damage concurrently before deaths and death triggers are resolved.
 
 Each activated ability on a card can be used only once per turn unless its definition explicitly sets `repeatable` to true. Usage resets at the start of that card controller's turn.
 
@@ -111,8 +111,26 @@ The Fire spell suite is:
 - **Cinder Ward** — 4 Fire; for the next three opposing combat phases, each creature that attacks the protected player takes 2 concurrent retaliation damage. A pulsing fire line and remaining duration appear on that battlefield.
 - **Ashen Bargain** — 1 Fire; sacrifice a friendly creature and draw two cards.
 - **Berserker Draught** — 3 Fire; give any card with HP +5 ATK and deal 3 damage to it.
+- **Searing Brand** — 2 Fire; add 3 Burn to any player or card with HP.
+- **Ember Infusion** — 2 Fire; permanently give a target creature Burn 2 while it remains in play.
 
-Nature builds a wide battlefield through Sapling tokens and persistent creature synergies. Spawn Sapling creates a 1/1 token, either when its source enters or through an explicitly costed activation. Sprout creates Saplings at turn start. Nurture permanently grants +ATK/+HP to another highest-value friendly creature. Elf Chorus gives other friendly Elves ATK while its source remains in play. Pack Growth gives its source +ATK/+HP for other creatures sharing a subtype, while Living Grove counts every other friendly creature. Grove Blessing permanently increases every friendly creature's maximum and current HP. Elder Call creates a 2/2 Elder Sapling. Dynamic bonuses update when creatures enter or leave play; tokens are neither collectible nor deck-eligible.
+Coalbrand Imp adds 1 Burn to any target when played. Pyre Stalker carries Burn 2. The Burn-plus-Freeze fusion recipe now creates Scald 5, which remains immediate bonus attack damage rather than a delayed Burn stack.
+
+Water's Sea Egg is a real collectible 0/2 Egg with Clock 3. Its Clock decreases at the end of its controller's turn. At Clock 0 it transforms in place into a 5/6 Sea Drake. Applying Freeze to a Sea Egg never gives it the Frozen status; it reduces Clock by the Freeze duration and hatches the Egg immediately if that reaches zero. The current Clock appears on its battlefield portrait.
+
+The Water spell suite is:
+
+- **Clear the Tide** — 1 Water; remove all Burn from the player and friendly cards, then restore 6 player HP.
+- **Sea Nursery** — 2 Water; create two Sea Eggs in random empty friendly positions.
+- **Deep Freeze** — 3 Water; select up to three creatures across either battlefield and Freeze each for two turns. Friendly Eggs may be selected for incubation.
+- **Mass Incubation** — 5 Water; create up to six Sea Eggs, constrained by available board space.
+- **Blizzard** — 6 Water; Freeze every creature on both sides for two turns, accelerating Sea Eggs on both sides instead.
+
+For multi-target Deep Freeze, a previously selected creature cannot be selected twice. Selection ends after three creatures or when no legal creature remains. The bot accelerates its own Eggs first, then freezes the highest-value opposing creatures.
+
+Nature builds a wide battlefield through tokens and persistent creature synergies. Growth permanently grants its strength as both ATK and current/maximum HP at the start of every controller turn. Spawn Sapling creates a 1/1 token, either when its source enters or through an explicitly costed activation. Sprout creates Saplings at turn start. Nurture permanently grants +ATK/+HP to another highest-value friendly creature. Elf Chorus gives other friendly Elves ATK while its source remains in play. Pack Growth gives its source +ATK/+HP for other creatures sharing a subtype, while Living Grove counts every other friendly creature. Grove Blessing permanently increases every friendly creature's maximum and current HP. Elder Call creates a 2/2 Elder Sapling. Dynamic bonuses update when creatures enter or leave play; tokens are neither collectible nor deck-eligible.
+
+The Nature spell set from `docs/design/nature_spells_v0_1.csv` is implemented in runtime data. First Sprout adds two free 1/1 Seed Elves to hand. Grove Muster creates two 2/2 Elder Saplings. Protective Canopy gives up to three friendly creatures temporary Shell 2 across two opposing combats. Nurturing Touch permanently gives one friendly creature +2/+2. Thorn Volley and Wildheart Strike deal flexible damage based on friendly creature count. Spore Cloud clogs the opposing board with two 0/1 Spores; each Spore permanently removes one ATK from a random unit on its controller's side at that side's end turn. Elf Chorus permanently buffs friendly Elves. Verdant Surge, Forest Armada, and Worldroot Ascension create Seed Elves and apply their authored team bonuses. Canopy of Ages grants team Shell and restores player HP.
 
 The bot scores opposing cards from current attack, HP, relevant damage or engine abilities, and card type. Damage effects strongly prefer a lethal low-HP target, then break viable choices by this threat score. Sacrifice spells offer its least valuable creature, while Berserker Draught favors a high-threat card that survives the HP loss.
 
@@ -128,4 +146,4 @@ After combat and all effects, the active player's Pillars run their one-second p
 
 Full cards show card genre through an icon; subtype names remain on one horizontal line. Spell cards print their complete resolved effect description in the ability area instead of repeating the spell ability name. Creature and structure keywords remain compact—such as **Scorch 2** or **Last Spark 3**—and hovering a keyword opens its textual rules explanation. Activated ability controls expose the same explanation. Cards without abilities leave the ability area empty rather than displaying placeholder copy. Collection, Forge, and deckbuilding ownership counts sit outside and immediately below the card frame.
 
-Lobby, Profile, Collection, Deck, Forge, Bazaar, and Match each use a configurable fantasy background. Background paths live in `data/game_config.json` and can be replaced without changing UI code.
+Lobby, Profile, Collection, Deck, Forge, Bazaar, Combat, and Match each use a configurable fantasy background. Background paths live in `data/game_config.json` and can be replaced without changing UI code.

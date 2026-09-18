@@ -5,14 +5,17 @@ const PROFILE_PATH := "user://profile.json"
 const ACCOUNTS_PATH := "user://accounts.json"
 const BOOTSTRAP_PATH := "res://data/bootstrap_profile.json"
 const CONFIG_PATH := "res://data/game_config.json"
+const STARTER_DECKS_PATH := "res://data/starter_decks.json"
 var profile: Dictionary = {}
 var accounts: Dictionary = {}
 var active_profile_id := ""
 var config: Dictionary = {}
+var starter_decks: Dictionary = {}
 
 func load_profile() -> Dictionary:
 	var bootstrap := _read_json(BOOTSTRAP_PATH)
 	config = _read_json(CONFIG_PATH)
+	starter_decks = _read_json(STARTER_DECKS_PATH).get("decks", {})
 	if FileAccess.file_exists(ACCOUNTS_PATH):
 		accounts = _read_json(ACCOUNTS_PATH)
 		active_profile_id = str(accounts.get("active_profile_id", ""))
@@ -37,20 +40,17 @@ func _ensure_profile(target: Dictionary, bootstrap: Dictionary) -> void:
 	target.get_or_add("collection", {})
 	target.get_or_add("merged_cards", {})
 	target.get_or_add("decks", {})
-	for id in bootstrap.get("collection", {}):
-		if not target.collection.has(id):
-			target.collection[id] = bootstrap.collection[id]
 	for id in target.merged_cards:
 		if not target.collection.has(id):
 			target.collection[id] = 1
 	_migrate_card_ids()
-	if target.decks.is_empty():
-		target.decks = bootstrap.decks.duplicate(true)
 	for deck in target.decks.values():
 		deck.get_or_add("foundation_id", "pillar_fire")
 		deck.get_or_add("vanguard_id", "ember_pup")
-	target.get_or_add("active_deck_id", "starter")
-	if not target.decks.has(str(target.active_deck_id)):
+	target.get_or_add("starter_deck_selected", not target.decks.is_empty())
+	target.get_or_add("starter_deck_id", "")
+	target.get_or_add("active_deck_id", "")
+	if not target.decks.is_empty() and not target.decks.has(str(target.active_deck_id)):
 		target.active_deck_id = str(target.decks.keys()[0])
 
 func all_profiles() -> Dictionary:
@@ -67,6 +67,31 @@ func create_profile(player_name: String) -> Dictionary:
 	accounts.active_profile_id = active_profile_id
 	save_profile()
 	return profile
+
+func apply_starter_deck(starter_id: String) -> bool:
+	if bool(profile.get("starter_deck_selected", false)) or not starter_decks.has(starter_id):
+		return false
+	var definition: Dictionary = starter_decks[starter_id]
+	var deck_id := "starter_" + starter_id
+	var collection: Dictionary = {}
+	for card_id in definition.get("card_ids", []):
+		collection[str(card_id)] = int(collection.get(str(card_id), 0)) + 1
+	for special_key in ["foundation_id", "vanguard_id"]:
+		var card_id := str(definition.get(special_key, ""))
+		if not card_id.is_empty(): collection[card_id] = int(collection.get(card_id, 0)) + 1
+	profile.collection = collection
+	profile.decks = {deck_id:{
+		"id":deck_id,
+		"name":str(definition.get("name", "Starter Deck")),
+		"foundation_id":str(definition.get("foundation_id", "")),
+		"vanguard_id":str(definition.get("vanguard_id", "")),
+		"card_ids":definition.get("card_ids", []).duplicate(true),
+		"modified_at":Time.get_datetime_string_from_system()
+	}}
+	profile.active_deck_id = deck_id
+	profile.starter_deck_selected = true
+	profile.starter_deck_id = starter_id
+	return save_profile()
 
 func switch_profile(id: String) -> Dictionary:
 	if not accounts.get("profiles", {}).has(id): return profile

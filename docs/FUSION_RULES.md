@@ -57,7 +57,7 @@ For each Imprint cost, generation is deterministic:
 
 The empty package is legal when no ability can fit. Fixed abilities are indivisible: they are retained at full value or omitted. Scalable abilities may be weakened only to a configured discrete strength.
 
-Recipes are alternative packages with their own output value. For example, Burn plus Freeze may become Scald only when Scald's configured value fits the current budget.
+Recipes are alternative packages with their own output value. For example, Burn plus Freeze may become the strengthened Scald 5 only when Scald's configured value fits the current budget.
 
 ## Result persistence
 
